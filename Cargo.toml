@@ -1,0 +1,15 @@
+[package]
+name = "rfilemaster"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "rfilemaster"
+path = "src/main.rs"
+
+[dependencies]
+eframe = { version = "0.27", features = ["default_fonts"] }
+egui = "0.27"
+egui_extras = "0.27"
+serde = { version = "1", features = ["derive"] }
+rfd = "0.14"
