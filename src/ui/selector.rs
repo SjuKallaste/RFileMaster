@@ -7,7 +7,7 @@ pub struct SelectorState {
     pub active_category: Option<FormatCategory>,
     pub source_format: Option<String>,
     pub target_format: Option<String>,
-    pub input_path: Option<std::path::PathBuf>,
+    pub input_paths: Vec<std::path::PathBuf>,
     pub output_dir: Option<std::path::PathBuf>,
 }
 
@@ -17,7 +17,7 @@ impl SelectorState {
             active_category: None,
             source_format: None,
             target_format: None,
-            input_path: None,
+            input_paths: Vec::new(),
             output_dir: None,
         }
     }
@@ -25,10 +25,19 @@ impl SelectorState {
     pub fn reset_formats(&mut self) {
         self.source_format = None;
         self.target_format = None;
+        self.input_paths.clear();
+    }
+
+    pub fn is_multi_image_to_pdf(&self) -> bool {
+        let src_is_image = self.source_format.as_deref().map(|s| {
+            matches!(s, "png"|"jpg"|"jpeg"|"webp"|"bmp"|"tiff"|"gif"|"ico"|"avif")
+        }).unwrap_or(false);
+        let tgt_is_pdf = self.target_format.as_deref() == Some("pdf");
+        src_is_image && tgt_is_pdf
     }
 
     pub fn is_ready(&self) -> bool {
-        self.source_format.is_some() && self.target_format.is_some() && self.input_path.is_some()
+        self.source_format.is_some() && self.target_format.is_some() && !self.input_paths.is_empty()
     }
 }
 
@@ -86,14 +95,14 @@ impl SelectorPanel {
         let size = Vec2::new(width, 30.0);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         if ui.is_rect_visible(rect) {
-            let (bg, fg, stroke) = if selected {
-                (theme::ACCENT, theme::TEXT_PRIMARY, Stroke::NONE)
+            let (bg, fg) = if selected {
+                (theme::ACCENT, theme::TEXT_PRIMARY)
             } else if response.hovered() {
-                (theme::SURFACE_HIGH, theme::TEXT_PRIMARY, Stroke::NONE)
+                (theme::SURFACE_HIGH, theme::TEXT_PRIMARY)
             } else {
-                (Color32::TRANSPARENT, theme::TEXT_SECONDARY, Stroke::NONE)
+                (Color32::TRANSPARENT, theme::TEXT_SECONDARY)
             };
-            ui.painter().rect(rect, theme::ROUNDING_SM, bg, stroke);
+            ui.painter().rect(rect, theme::ROUNDING_SM, bg, Stroke::NONE);
             ui.painter().text(
                 egui::pos2(rect.min.x + 10.0, rect.center().y),
                 egui::Align2::LEFT_CENTER,
@@ -135,6 +144,7 @@ impl SelectorPanel {
                             if ui.selectable_label(selected, fmt.display()).clicked() {
                                 if state.source_format.as_deref() != Some(fmt.id) {
                                     state.target_format = None;
+                                    state.input_paths.clear();
                                 }
                                 state.source_format = Some(fmt.id.to_string());
                             }
@@ -173,6 +183,9 @@ impl SelectorPanel {
                         for fmt in &targets {
                             let selected = state.target_format.as_deref() == Some(fmt.id);
                             if ui.selectable_label(selected, fmt.display()).clicked() {
+                                if state.target_format.as_deref() != Some(fmt.id) {
+                                    state.input_paths.clear();
+                                }
                                 state.target_format = Some(fmt.id.to_string());
                             }
                         }
@@ -184,8 +197,13 @@ impl SelectorPanel {
             ui.add_space(8.0);
             let src_label = registry.find(src_id).map(|f| f.label).unwrap_or(src_id.as_str());
             let tgt_label = registry.find(tgt_id).map(|f| f.label).unwrap_or(tgt_id.as_str());
+            let suffix = if state.is_multi_image_to_pdf() {
+                "  -  select multiple images to merge into one PDF".to_string()
+            } else {
+                String::new()
+            };
             ui.label(
-                RichText::new(format!("{} -> {}", src_label, tgt_label))
+                RichText::new(format!("{} -> {}{}", src_label, tgt_label, suffix))
                     .font(theme::small_font())
                     .color(theme::SUCCESS),
             );
@@ -198,7 +216,12 @@ impl SelectorPanel {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(col_w);
-                ui.label(RichText::new("INPUT FILE").font(theme::label_font()).color(theme::TEXT_MUTED));
+                let label = if state.is_multi_image_to_pdf() {
+                    "INPUT FILES (multiple allowed)"
+                } else {
+                    "INPUT FILE"
+                };
+                ui.label(RichText::new(label).font(theme::label_font()).color(theme::TEXT_MUTED));
                 ui.add_space(6.0);
                 Self::drop_zone(ui, state, col_w);
             });
@@ -215,12 +238,18 @@ impl SelectorPanel {
     }
 
     fn drop_zone(ui: &mut Ui, state: &mut SelectorState, width: f32) {
-        let height = 110.0;
+        let multi = state.is_multi_image_to_pdf();
+        let height = if multi && !state.input_paths.is_empty() {
+            (40.0 + state.input_paths.len() as f32 * 18.0).max(110.0).min(200.0)
+        } else {
+            110.0
+        };
+
         let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
         let is_drag = ui.ctx().input(|i| !i.raw.hovered_files.is_empty());
 
         let (bg, stroke_col) = if is_drag {
-            (Color32::from_rgba_unmultiplied(0xb0, 0x7e, 0xe8, 18), theme::ACCENT)
+            (Color32::from_rgba_unmultiplied(0x9b, 0x6e, 0xd8, 22), theme::ACCENT)
         } else if response.hovered() {
             (theme::SURFACE_HIGH, theme::BASE_LIGHT)
         } else {
@@ -229,39 +258,81 @@ impl SelectorPanel {
 
         if ui.is_rect_visible(rect) {
             ui.painter().rect(rect, theme::ROUNDING_SM, bg, Stroke::new(1.0, stroke_col));
-            let (text, color, font_size) = if let Some(p) = &state.input_path {
-                (p.file_name().and_then(|n| n.to_str()).unwrap_or("file selected").to_string(), theme::TEXT_PRIMARY, 13.0)
+
+            if state.input_paths.is_empty() {
+                let hint = if multi {
+                    "Drop images here or click to browse (multi-select allowed)"
+                } else {
+                    "Drop file here or click to browse"
+                };
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    hint,
+                    FontId::new(12.0, egui::FontFamily::Proportional),
+                    theme::TEXT_MUTED,
+                );
+            } else if multi {
+                let top = rect.min.y + 10.0;
+                ui.painter().text(
+                    egui::pos2(rect.min.x + 10.0, top),
+                    egui::Align2::LEFT_TOP,
+                    format!("{} file(s) selected", state.input_paths.len()),
+                    FontId::new(11.0, egui::FontFamily::Proportional),
+                    theme::ACCENT_BRIGHT,
+                );
+                for (i, p) in state.input_paths.iter().enumerate() {
+                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                    let y = top + 20.0 + i as f32 * 18.0;
+                    if y + 16.0 > rect.max.y { break; }
+                    ui.painter().text(
+                        egui::pos2(rect.min.x + 14.0, y),
+                        egui::Align2::LEFT_TOP,
+                        name,
+                        FontId::new(11.0, egui::FontFamily::Proportional),
+                        theme::TEXT_SECONDARY,
+                    );
+                }
             } else {
-                ("Drop file here or click to browse".to_string(), theme::TEXT_MUTED, 13.0)
-            };
-            ui.painter().text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                text,
-                FontId::new(font_size, egui::FontFamily::Proportional),
-                color,
-            );
+                let name = state.input_paths[0]
+                    .file_name().and_then(|n| n.to_str()).unwrap_or("file selected");
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    name,
+                    FontId::new(13.0, egui::FontFamily::Proportional),
+                    theme::TEXT_PRIMARY,
+                );
+            }
         }
 
         if response.clicked() {
-            if let Some(path) = rfd::FileDialog::new().pick_file() {
-                state.input_path = Some(path);
+            let mut dialog = rfd::FileDialog::new();
+            if let Some(src) = &state.source_format {
+                dialog = dialog.add_filter(src.to_uppercase().as_str(), &[src.as_str()]);
+            }
+            if multi {
+                if let Some(paths) = dialog.pick_files() {
+                    state.input_paths = paths;
+                }
+            } else if let Some(path) = dialog.pick_file() {
+                state.input_paths = vec![path];
             }
         }
 
         let dropped = ui.ctx().input(|i| i.raw.dropped_files.clone());
         if !dropped.is_empty() {
-            if let Some(first) = dropped.into_iter().next() {
-                if let Some(p) = first.path {
-                    state.input_path = Some(p);
-                }
+            let paths: Vec<_> = dropped.into_iter().filter_map(|f| f.path).collect();
+            if multi {
+                state.input_paths.extend(paths);
+            } else if let Some(p) = paths.into_iter().next() {
+                state.input_paths = vec![p];
             }
         }
     }
 
     fn output_dir_picker(ui: &mut Ui, state: &mut SelectorState, width: f32) {
-        let height = 110.0;
-        let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
+        let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 110.0), Sense::click());
 
         let (bg, stroke_col) = if response.hovered() {
             (theme::SURFACE_HIGH, theme::BASE_LIGHT)

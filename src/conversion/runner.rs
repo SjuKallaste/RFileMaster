@@ -1,52 +1,82 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
+use std::sync::mpsc::{channel, Receiver, Sender};
 use crate::conversion::job::{ConversionJob, JobStatus};
+use crate::conversion::engine;
+
+enum JobUpdate {
+    Done(u64, PathBuf),
+    Failed(u64, String),
+}
 
 pub struct ConversionRunner {
     pub jobs: Arc<Mutex<Vec<ConversionJob>>>,
     next_id: u64,
+    tx: Sender<JobUpdate>,
+    rx: Receiver<JobUpdate>,
 }
 
 impl ConversionRunner {
     pub fn new() -> Self {
+        let (tx, rx) = channel();
         Self {
             jobs: Arc::new(Mutex::new(Vec::new())),
             next_id: 1,
+            tx,
+            rx,
         }
     }
 
-    pub fn enqueue(&mut self, input: PathBuf, source: String, target: String, output_dir: Option<PathBuf>) {
-        let output = output_dir.map(|d| {
-            let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
-            d.join(format!("{}.{}", stem, target))
-        });
-        let job = ConversionJob::new(self.next_id, input, source, target, output);
+    pub fn enqueue(&mut self, inputs: Vec<PathBuf>, source: String, target: String, output_path: PathBuf) {
+        let job = ConversionJob::new(self.next_id, inputs, source, target, output_path);
         self.next_id += 1;
         let mut jobs = self.jobs.lock().unwrap();
         jobs.push(job);
     }
 
-    pub fn tick(&self) {
-        let mut jobs = self.jobs.lock().unwrap();
-        for job in jobs.iter_mut() {
-            match &job.status {
-                JobStatus::Queued => {
-                    job.status = JobStatus::Running(0.0);
-                }
-                JobStatus::Running(p) => {
-                    let new_p = (p + 0.05).min(1.0);
-                    if new_p >= 1.0 {
-                        let out = job.output_path.clone().unwrap_or_else(|| {
-                            let stem = job.input_path.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
-                            PathBuf::from(format!("{}.{}", stem, job.target_format))
-                        });
-                        job.status = JobStatus::Done(out);
-                    } else {
-                        job.status = JobStatus::Running(new_p);
+    pub fn tick(&mut self) {
+        while let Ok(update) = self.rx.try_recv() {
+            let mut jobs = self.jobs.lock().unwrap();
+            match update {
+                JobUpdate::Done(id, path) => {
+                    if let Some(job) = jobs.iter_mut().find(|j| j.id == id) {
+                        job.status = JobStatus::Done(path);
                     }
                 }
-                _ => {}
+                JobUpdate::Failed(id, err) => {
+                    if let Some(job) = jobs.iter_mut().find(|j| j.id == id) {
+                        job.status = JobStatus::Failed(err);
+                    }
+                }
             }
+        }
+
+        let queued_ids: Vec<u64> = {
+            let jobs = self.jobs.lock().unwrap();
+            jobs.iter()
+                .filter(|j| j.status == JobStatus::Queued)
+                .map(|j| j.id)
+                .collect()
+        };
+
+        for id in queued_ids {
+            let (inputs, source, target, output_path) = {
+                let mut jobs = self.jobs.lock().unwrap();
+                if let Some(job) = jobs.iter_mut().find(|j| j.id == id) {
+                    job.status = JobStatus::Running(0.0);
+                    (job.input_paths.clone(), job.source_format.clone(), job.target_format.clone(), job.output_path.clone())
+                } else {
+                    continue;
+                }
+            };
+
+            let tx = self.tx.clone();
+            std::thread::spawn(move || {
+                match engine::convert(&inputs, &source, &target, &output_path) {
+                    Ok(()) => { let _ = tx.send(JobUpdate::Done(id, output_path)); }
+                    Err(e) => { let _ = tx.send(JobUpdate::Failed(id, e)); }
+                }
+            });
         }
     }
 

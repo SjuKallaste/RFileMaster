@@ -70,15 +70,23 @@ impl eframe::App for TransmogrifyApp {
                 });
 
             if convert_clicked {
-                if let (Some(src), Some(tgt), Some(input)) = (
-                    self.selector.source_format.clone(),
-                    self.selector.target_format.clone(),
-                    self.selector.input_path.clone(),
-                ) {
-                    let out_dir = self.selector.output_dir.clone()
+                let src = self.selector.source_format.clone();
+                let tgt = self.selector.target_format.clone();
+                let inputs = self.selector.input_paths.clone();
+                if let (Some(src), Some(tgt)) = (src, tgt) {
+                    let base_dir = self.selector.output_dir.clone()
                         .or_else(|| self.settings.default_output_dir.clone())
-                        .or_else(|| input.parent().map(|p| p.to_path_buf()));
-                    self.runner.enqueue(input, src, tgt, out_dir);
+                        .or_else(|| inputs.first().and_then(|p| p.parent()).map(|p| p.to_path_buf()))
+                        .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+                    let stem = if inputs.len() == 1 {
+                        inputs[0].file_stem().and_then(|s| s.to_str()).unwrap_or("output").to_string()
+                    } else {
+                        "merged".to_string()
+                    };
+
+                    let output_path = base_dir.join(format!("{}.{}", stem, tgt));
+                    self.runner.enqueue(inputs, src, tgt, output_path);
                     self.active_tab = Tab::Queue;
                 }
             }

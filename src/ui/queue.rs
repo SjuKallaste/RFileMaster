@@ -1,4 +1,4 @@
-use egui::{Color32, Frame, Margin, ProgressBar, RichText, Stroke, Ui, Vec2};
+use egui::{Frame, Margin, ProgressBar, RichText, Stroke, Ui, Vec2};
 use crate::conversion::job::JobStatus;
 use crate::conversion::runner::ConversionRunner;
 use crate::theme;
@@ -78,7 +78,7 @@ impl QueuePanel {
                                         ui.set_min_width(panel_w - 120.0);
                                         ui.horizontal(|ui| {
                                             ui.label(
-                                                RichText::new(job.file_name())
+                                                RichText::new(job.display_name())
                                                     .font(theme::label_font())
                                                     .color(theme::TEXT_PRIMARY),
                                             );
@@ -89,8 +89,8 @@ impl QueuePanel {
                                                     job.source_format.to_uppercase(),
                                                     job.target_format.to_uppercase()
                                                 ))
-                                                .font(theme::small_font())
-                                                .color(theme::TEXT_MUTED),
+                                                    .font(theme::small_font())
+                                                    .color(theme::TEXT_MUTED),
                                             );
                                         });
 
@@ -122,12 +122,11 @@ impl QueuePanel {
                                                                 .and_then(|n| n.to_str())
                                                                 .unwrap_or("output"),
                                                         )
-                                                        .font(theme::small_font())
-                                                        .color(theme::TEXT_SECONDARY),
+                                                            .font(theme::small_font())
+                                                            .color(theme::TEXT_SECONDARY),
                                                     );
                                                 });
-                                            }
-                                            JobStatus::Failed(e) => {
+                                            }                                            JobStatus::Failed(e) => {
                                                 ui.horizontal(|ui| {
                                                     widgets::status_badge(ui, "Failed", theme::ERROR);
                                                     ui.add_space(6.0);

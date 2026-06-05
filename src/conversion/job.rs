@@ -26,18 +26,18 @@ impl JobStatus {
 #[derive(Debug, Clone)]
 pub struct ConversionJob {
     pub id: u64,
-    pub input_path: PathBuf,
+    pub input_paths: Vec<PathBuf>,
     pub source_format: String,
     pub target_format: String,
-    pub output_path: Option<PathBuf>,
+    pub output_path: PathBuf,
     pub status: JobStatus,
 }
 
 impl ConversionJob {
-    pub fn new(id: u64, input_path: PathBuf, source_format: String, target_format: String, output_path: Option<PathBuf>) -> Self {
+    pub fn new(id: u64, input_paths: Vec<PathBuf>, source_format: String, target_format: String, output_path: PathBuf) -> Self {
         Self {
             id,
-            input_path,
+            input_paths,
             source_format,
             target_format,
             output_path,
@@ -45,11 +45,15 @@ impl ConversionJob {
         }
     }
 
-    pub fn file_name(&self) -> String {
-        self.input_path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("unknown")
-            .to_string()
+    pub fn display_name(&self) -> String {
+        if self.input_paths.len() == 1 {
+            self.input_paths[0]
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown")
+                .to_string()
+        } else {
+            format!("{} files -> {}", self.input_paths.len(), self.target_format.to_uppercase())
+        }
     }
 }
