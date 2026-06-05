@@ -3,25 +3,70 @@ use std::fs;
 use image::ImageFormat;
 use printpdf::{Mm, PdfDocument, Image as PdfImage, ImageTransform, ImageXObject, ColorSpace, ColorBits};
 
-pub fn convert(inputs: &[PathBuf], source: &str, target: &str, output_path: &Path) -> Result<(), String> {
+pub fn convert(inputs: &[PathBuf], source: &str, target: &str, output_path: &Path, merge: bool) -> Result<(), String> {
+    if inputs.is_empty() {
+        return Err("No input files provided".to_string());
+    }
     match (source, target) {
         (s, "pdf") if is_image_format(s) => images_to_pdf(inputs, output_path),
-        (s, t) if is_image_format(s) && is_image_format(t) => image_to_image(&inputs[0], output_path, t),
-        ("json", "csv") => json_to_csv(&inputs[0], output_path),
-        ("csv", "json") => csv_to_json(&inputs[0], output_path),
-        ("json", "yaml") => json_to_yaml(&inputs[0], output_path),
-        ("yaml", "json") => yaml_to_json(&inputs[0], output_path),
-        ("json", "toml") => json_to_toml(&inputs[0], output_path),
-        ("toml", "json") => toml_to_json(&inputs[0], output_path),
-        ("yaml", "toml") => yaml_to_toml(&inputs[0], output_path),
-        ("toml", "yaml") => toml_to_yaml(&inputs[0], output_path),
-        ("csv", "tsv") => csv_to_tsv(&inputs[0], output_path),
-        ("tsv", "csv") => tsv_to_csv(&inputs[0], output_path),
-        ("md", "html") => md_to_html(&inputs[0], output_path),
-        ("html", "txt") => html_to_txt(&inputs[0], output_path),
-        ("txt", "md") => txt_to_md(&inputs[0], output_path),
+        (s, t) if is_image_format(s) && is_image_format(t) => {
+            batch_or_single(inputs, output_path, merge, |input, out| {
+                image_to_image(input, out, t)
+            })
+        }
+        ("json", "csv") => batch_or_single(inputs, output_path, merge, json_to_csv),
+        ("csv", "json") => {
+            if merge && inputs.len() > 1 {
+                csvs_to_json_merged(inputs, output_path)
+            } else {
+                batch_or_single(inputs, output_path, merge, csv_to_json)
+            }
+        }
+        ("json", "yaml") => batch_or_single(inputs, output_path, merge, json_to_yaml),
+        ("yaml", "json") => batch_or_single(inputs, output_path, merge, yaml_to_json),
+        ("json", "toml") => batch_or_single(inputs, output_path, merge, json_to_toml),
+        ("toml", "json") => batch_or_single(inputs, output_path, merge, toml_to_json),
+        ("yaml", "toml") => batch_or_single(inputs, output_path, merge, yaml_to_toml),
+        ("toml", "yaml") => batch_or_single(inputs, output_path, merge, toml_to_yaml),
+        ("csv", "tsv") => batch_or_single(inputs, output_path, merge, csv_to_tsv),
+        ("tsv", "csv") => batch_or_single(inputs, output_path, merge, tsv_to_csv),
+        ("md", "html") => {
+            if merge && inputs.len() > 1 {
+                mds_to_html_merged(inputs, output_path)
+            } else {
+                batch_or_single(inputs, output_path, merge, md_to_html)
+            }
+        }
+        ("html", "txt") => batch_or_single(inputs, output_path, merge, html_to_txt),
+        ("txt", "md") => batch_or_single(inputs, output_path, merge, txt_to_md),
         _ => Err(format!("Conversion from {} to {} is not yet implemented", source, target)),
     }
+}
+
+fn batch_or_single(
+    inputs: &[PathBuf],
+    output_path: &Path,
+    merge: bool,
+    f: impl Fn(&Path, &Path) -> Result<(), String>,
+) -> Result<(), String> {
+    if inputs.len() == 1 {
+        return f(&inputs[0], output_path);
+    }
+    let out_dir = output_path.parent().unwrap_or(Path::new("."));
+    let ext = output_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    for input in inputs {
+        let stem = input.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+        let out = out_dir.join(format!("{}.{}", stem, ext));
+        f(input, &out)?;
+    }
+    Ok(())
+}
+
+pub fn supports_merge(source: &str, target: &str) -> bool {
+    let img_to_pdf = is_image_format(source) && target == "pdf";
+    let multi_md = source == "md" && target == "html";
+    let multi_csv = source == "csv" && target == "json";
+    img_to_pdf || multi_md || multi_csv
 }
 
 fn is_image_format(fmt: &str) -> bool {
@@ -48,61 +93,55 @@ fn image_to_image(input: &Path, output: &Path, target_ext: &str) -> Result<(), S
     img.save_with_format(output, fmt).map_err(|e| e.to_string())
 }
 
+fn add_img_to_pdf_layer(img: image::DynamicImage, layer: printpdf::PdfLayerReference) {
+    let (w, h) = (img.width(), img.height());
+    let rgb = img.to_rgb8();
+    let raw = rgb.into_raw();
+    let xobj = ImageXObject {
+        width: printpdf::Px(w as usize),
+        height: printpdf::Px(h as usize),
+        color_space: ColorSpace::Rgb,
+        bits_per_component: ColorBits::Bit8,
+        interpolate: true,
+        image_data: raw,
+        image_filter: None,
+        smask: None,
+        clipping_bbox: None,
+    };
+    PdfImage::from(xobj).add_to_layer(
+        layer,
+        ImageTransform {
+            translate_x: Some(Mm(0.0)),
+            translate_y: Some(Mm(0.0)),
+            scale_x: None,
+            scale_y: None,
+            dpi: Some(150.0),
+            ..Default::default()
+        },
+    );
+}
+
 fn images_to_pdf(inputs: &[PathBuf], output: &Path) -> Result<(), String> {
-    if inputs.is_empty() {
-        return Err("No input files provided".to_string());
-    }
+    let dpi = 150.0_f32;
+    let mm_per_px = 25.4 / dpi;
 
     let first = image::open(&inputs[0]).map_err(|e| e.to_string())?;
     let (fw, fh) = (first.width() as f32, first.height() as f32);
-    let dpi = 150.0_f32;
-    let page_w = Mm((fw / dpi) * 25.4);
-    let page_h = Mm((fh / dpi) * 25.4);
+    let page_w = Mm(fw * mm_per_px);
+    let page_h = Mm(fh * mm_per_px);
 
     let (doc, first_page, first_layer) = PdfDocument::new("RFileMaster Export", page_w, page_h, "Layer 1");
-
-    let add_image_to_layer = |img: image::DynamicImage, layer: printpdf::PdfLayerReference| -> Result<(), String> {
-        let (w, h) = (img.width(), img.height());
-        let rgb = img.to_rgb8();
-        let raw = rgb.into_raw();
-        let image_xobj = ImageXObject {
-            width: printpdf::Px(w as usize),
-            height: printpdf::Px(h as usize),
-            color_space: ColorSpace::Rgb,
-            bits_per_component: ColorBits::Bit8,
-            interpolate: true,
-            image_data: raw,
-            image_filter: None,
-            smask: None,
-            clipping_bbox: None,
-        };
-        let pdf_img = PdfImage::from(image_xobj);
-        let img_w_mm = (w as f32 / dpi) * 25.4;
-        let img_h_mm = (h as f32 / dpi) * 25.4;
-        pdf_img.add_to_layer(
-            layer,
-            ImageTransform {
-                translate_x: Some(Mm(0.0)),
-                translate_y: Some(Mm(0.0)),
-                scale_x: Some(img_w_mm / (w as f32)),
-                scale_y: Some(img_h_mm / (h as f32)),
-                ..Default::default()
-            },
-        );
-        Ok(())
-    };
-
-    let first_layer_ref = doc.get_page(first_page).get_layer(first_layer);
-    add_image_to_layer(first, first_layer_ref)?;
+    let layer_ref = doc.get_page(first_page).get_layer(first_layer);
+    add_img_to_pdf_layer(first, layer_ref);
 
     for input in inputs.iter().skip(1) {
         let img = image::open(input).map_err(|e| e.to_string())?;
         let (iw, ih) = (img.width() as f32, img.height() as f32);
-        let pw = Mm((iw / dpi) * 25.4);
-        let ph = Mm((ih / dpi) * 25.4);
+        let pw = Mm(iw * mm_per_px);
+        let ph = Mm(ih * mm_per_px);
         let (page_idx, layer_idx) = doc.add_page(pw, ph, "Layer 1");
         let layer_ref = doc.get_page(page_idx).get_layer(layer_idx);
-        add_image_to_layer(img, layer_ref)?;
+        add_img_to_pdf_layer(img, layer_ref);
     }
 
     let bytes = doc.save_to_bytes().map_err(|e| e.to_string())?;
@@ -150,6 +189,23 @@ fn csv_to_json(input: &Path, output: &Path) -> Result<(), String> {
         records.push(serde_json::Value::Object(obj));
     }
     let json = serde_json::to_string_pretty(&records).map_err(|e| e.to_string())?;
+    fs::write(output, json).map_err(|e| e.to_string())
+}
+
+fn csvs_to_json_merged(inputs: &[PathBuf], output: &Path) -> Result<(), String> {
+    let mut all: Vec<serde_json::Value> = Vec::new();
+    for input in inputs {
+        let mut rdr = csv::Reader::from_path(input).map_err(|e| e.to_string())?;
+        let headers: Vec<String> = rdr.headers().map_err(|e| e.to_string())?.iter().map(|s| s.to_string()).collect();
+        for result in rdr.records() {
+            let record = result.map_err(|e| e.to_string())?;
+            let obj: serde_json::Map<String, serde_json::Value> = headers.iter().zip(record.iter())
+                .map(|(h, v)| (h.clone(), serde_json::Value::String(v.to_string())))
+                .collect();
+            all.push(serde_json::Value::Object(obj));
+        }
+    }
+    let json = serde_json::to_string_pretty(&all).map_err(|e| e.to_string())?;
     fs::write(output, json).map_err(|e| e.to_string())
 }
 
@@ -226,6 +282,24 @@ fn tsv_to_csv(input: &Path, output: &Path) -> Result<(), String> {
 fn md_to_html(input: &Path, output: &Path) -> Result<(), String> {
     let text = fs::read_to_string(input).map_err(|e| e.to_string())?;
     let parser = pulldown_cmark::Parser::new(&text);
+    let mut html = String::new();
+    pulldown_cmark::html::push_html(&mut html, parser);
+    let full = format!(
+        "<!DOCTYPE html><html><head><meta charset=\"utf-8\"><style>body{{font-family:sans-serif;max-width:800px;margin:40px auto;line-height:1.6;padding:0 20px}}</style></head><body>{}</body></html>",
+        html
+    );
+    fs::write(output, full).map_err(|e| e.to_string())
+}
+
+fn mds_to_html_merged(inputs: &[PathBuf], output: &Path) -> Result<(), String> {
+    let mut combined = String::new();
+    for (i, input) in inputs.iter().enumerate() {
+        if i > 0 {
+            combined.push_str("\n\n<hr>\n\n");
+        }
+        combined.push_str(&fs::read_to_string(input).map_err(|e| e.to_string())?);
+    }
+    let parser = pulldown_cmark::Parser::new(&combined);
     let mut html = String::new();
     pulldown_cmark::html::push_html(&mut html, parser);
     let full = format!(

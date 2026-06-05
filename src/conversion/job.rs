@@ -30,17 +30,19 @@ pub struct ConversionJob {
     pub source_format: String,
     pub target_format: String,
     pub output_path: PathBuf,
+    pub merge: bool,
     pub status: JobStatus,
 }
 
 impl ConversionJob {
-    pub fn new(id: u64, input_paths: Vec<PathBuf>, source_format: String, target_format: String, output_path: PathBuf) -> Self {
+    pub fn new(id: u64, input_paths: Vec<PathBuf>, source_format: String, target_format: String, output_path: PathBuf, merge: bool) -> Self {
         Self {
             id,
             input_paths,
             source_format,
             target_format,
             output_path,
+            merge,
             status: JobStatus::Queued,
         }
     }

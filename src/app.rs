@@ -86,7 +86,7 @@ impl eframe::App for TransmogrifyApp {
                     };
 
                     let output_path = base_dir.join(format!("{}.{}", stem, tgt));
-                    self.runner.enqueue(inputs, src, tgt, output_path);
+                    self.runner.enqueue(inputs, src, tgt, output_path, self.selector.merge);
                     self.active_tab = Tab::Queue;
                 }
             }

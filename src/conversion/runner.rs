@@ -27,8 +27,8 @@ impl ConversionRunner {
         }
     }
 
-    pub fn enqueue(&mut self, inputs: Vec<PathBuf>, source: String, target: String, output_path: PathBuf) {
-        let job = ConversionJob::new(self.next_id, inputs, source, target, output_path);
+    pub fn enqueue(&mut self, inputs: Vec<PathBuf>, source: String, target: String, output_path: PathBuf, merge: bool) {
+        let job = ConversionJob::new(self.next_id, inputs, source, target, output_path, merge);
         self.next_id += 1;
         let mut jobs = self.jobs.lock().unwrap();
         jobs.push(job);
@@ -60,11 +60,11 @@ impl ConversionRunner {
         };
 
         for id in queued_ids {
-            let (inputs, source, target, output_path) = {
+            let (inputs, source, target, output_path, merge) = {
                 let mut jobs = self.jobs.lock().unwrap();
                 if let Some(job) = jobs.iter_mut().find(|j| j.id == id) {
                     job.status = JobStatus::Running(0.0);
-                    (job.input_paths.clone(), job.source_format.clone(), job.target_format.clone(), job.output_path.clone())
+                    (job.input_paths.clone(), job.source_format.clone(), job.target_format.clone(), job.output_path.clone(), job.merge)
                 } else {
                     continue;
                 }
@@ -72,7 +72,7 @@ impl ConversionRunner {
 
             let tx = self.tx.clone();
             std::thread::spawn(move || {
-                match engine::convert(&inputs, &source, &target, &output_path) {
+                match engine::convert(&inputs, &source, &target, &output_path, merge) {
                     Ok(()) => { let _ = tx.send(JobUpdate::Done(id, output_path)); }
                     Err(e) => { let _ = tx.send(JobUpdate::Failed(id, e)); }
                 }

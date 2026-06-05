@@ -9,6 +9,7 @@ pub struct SelectorState {
     pub target_format: Option<String>,
     pub input_paths: Vec<std::path::PathBuf>,
     pub output_dir: Option<std::path::PathBuf>,
+    pub merge: bool,
 }
 
 impl SelectorState {
@@ -19,6 +20,7 @@ impl SelectorState {
             target_format: None,
             input_paths: Vec::new(),
             output_dir: None,
+            merge: false,
         }
     }
 
@@ -26,14 +28,14 @@ impl SelectorState {
         self.source_format = None;
         self.target_format = None;
         self.input_paths.clear();
+        self.merge = false;
     }
 
-    pub fn is_multi_image_to_pdf(&self) -> bool {
-        let src_is_image = self.source_format.as_deref().map(|s| {
-            matches!(s, "png"|"jpg"|"jpeg"|"webp"|"bmp"|"tiff"|"gif"|"ico"|"avif")
-        }).unwrap_or(false);
-        let tgt_is_pdf = self.target_format.as_deref() == Some("pdf");
-        src_is_image && tgt_is_pdf
+    pub fn supports_merge(&self) -> bool {
+        match (&self.source_format, &self.target_format) {
+            (Some(s), Some(t)) => crate::conversion::engine::supports_merge(s, t),
+            _ => false,
+        }
     }
 
     pub fn is_ready(&self) -> bool {
@@ -197,10 +199,10 @@ impl SelectorPanel {
             ui.add_space(8.0);
             let src_label = registry.find(src_id).map(|f| f.label).unwrap_or(src_id.as_str());
             let tgt_label = registry.find(tgt_id).map(|f| f.label).unwrap_or(tgt_id.as_str());
-            let suffix = if state.is_multi_image_to_pdf() {
-                "  -  select multiple images to merge into one PDF".to_string()
+            let suffix = if state.supports_merge() {
+                "  -  multiple files supported"
             } else {
-                String::new()
+                ""
             };
             ui.label(
                 RichText::new(format!("{} -> {}{}", src_label, tgt_label, suffix))
@@ -216,14 +218,21 @@ impl SelectorPanel {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(col_w);
-                let label = if state.is_multi_image_to_pdf() {
-                    "INPUT FILES (multiple allowed)"
-                } else {
-                    "INPUT FILE"
-                };
+                let multi = state.input_paths.len() > 1 || state.supports_merge();
+                let label = if multi { "INPUT FILES" } else { "INPUT FILE" };
                 ui.label(RichText::new(label).font(theme::label_font()).color(theme::TEXT_MUTED));
                 ui.add_space(6.0);
                 Self::drop_zone(ui, state, col_w);
+                if state.supports_merge() && state.input_paths.len() > 1 {
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        ui.checkbox(&mut state.merge,
+                                    RichText::new("Merge into one file")
+                                        .font(theme::small_font())
+                                        .color(theme::TEXT_SECONDARY),
+                        );
+                    });
+                }
             });
 
             ui.add_space(gap);
@@ -238,9 +247,9 @@ impl SelectorPanel {
     }
 
     fn drop_zone(ui: &mut Ui, state: &mut SelectorState, width: f32) {
-        let multi = state.is_multi_image_to_pdf();
-        let height = if multi && !state.input_paths.is_empty() {
-            (40.0 + state.input_paths.len() as f32 * 18.0).max(110.0).min(200.0)
+        let has_files = !state.input_paths.is_empty();
+        let height = if has_files && state.input_paths.len() > 1 {
+            (40.0 + state.input_paths.len() as f32 * 18.0).clamp(110.0, 200.0)
         } else {
             110.0
         };
@@ -260,24 +269,28 @@ impl SelectorPanel {
             ui.painter().rect(rect, theme::ROUNDING_SM, bg, Stroke::new(1.0, stroke_col));
 
             if state.input_paths.is_empty() {
-                let hint = if multi {
-                    "Drop images here or click to browse (multi-select allowed)"
-                } else {
-                    "Drop file here or click to browse"
-                };
                 ui.painter().text(
                     rect.center(),
                     egui::Align2::CENTER_CENTER,
-                    hint,
+                    "Drop files here or click to browse",
                     FontId::new(12.0, egui::FontFamily::Proportional),
                     theme::TEXT_MUTED,
                 );
-            } else if multi {
+            } else if state.input_paths.len() == 1 {
+                let name = state.input_paths[0].file_name().and_then(|n| n.to_str()).unwrap_or("file selected");
+                ui.painter().text(
+                    rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    name,
+                    FontId::new(13.0, egui::FontFamily::Proportional),
+                    theme::TEXT_PRIMARY,
+                );
+            } else {
                 let top = rect.min.y + 10.0;
                 ui.painter().text(
                     egui::pos2(rect.min.x + 10.0, top),
                     egui::Align2::LEFT_TOP,
-                    format!("{} file(s) selected", state.input_paths.len()),
+                    format!("{} files selected", state.input_paths.len()),
                     FontId::new(11.0, egui::FontFamily::Proportional),
                     theme::ACCENT_BRIGHT,
                 );
@@ -293,16 +306,6 @@ impl SelectorPanel {
                         theme::TEXT_SECONDARY,
                     );
                 }
-            } else {
-                let name = state.input_paths[0]
-                    .file_name().and_then(|n| n.to_str()).unwrap_or("file selected");
-                ui.painter().text(
-                    rect.center(),
-                    egui::Align2::CENTER_CENTER,
-                    name,
-                    FontId::new(13.0, egui::FontFamily::Proportional),
-                    theme::TEXT_PRIMARY,
-                );
             }
         }
 
@@ -311,22 +314,20 @@ impl SelectorPanel {
             if let Some(src) = &state.source_format {
                 dialog = dialog.add_filter(src.to_uppercase().as_str(), &[src.as_str()]);
             }
-            if multi {
-                if let Some(paths) = dialog.pick_files() {
-                    state.input_paths = paths;
+            if let Some(paths) = dialog.pick_files() {
+                state.input_paths = paths;
+                if state.input_paths.len() > 1 && state.supports_merge() {
+                    state.merge = true;
                 }
-            } else if let Some(path) = dialog.pick_file() {
-                state.input_paths = vec![path];
             }
         }
 
         let dropped = ui.ctx().input(|i| i.raw.dropped_files.clone());
         if !dropped.is_empty() {
             let paths: Vec<_> = dropped.into_iter().filter_map(|f| f.path).collect();
-            if multi {
-                state.input_paths.extend(paths);
-            } else if let Some(p) = paths.into_iter().next() {
-                state.input_paths = vec![p];
+            state.input_paths.extend(paths);
+            if state.input_paths.len() > 1 && state.supports_merge() {
+                state.merge = true;
             }
         }
     }
