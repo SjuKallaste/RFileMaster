@@ -41,6 +41,27 @@ impl SelectorState {
     pub fn is_ready(&self) -> bool {
         self.source_format.is_some() && self.target_format.is_some() && !self.input_paths.is_empty()
     }
+
+    pub fn detect_format_from_paths(&mut self, registry: &FormatRegistry) {
+        let ext = self.input_paths.first()
+            .and_then(|p| p.extension())
+            .and_then(|e| e.to_str())
+            .map(|e| e.to_lowercase());
+        let ext = match ext {
+            Some(e) => e,
+            None => return,
+        };
+        let fmt = registry.find(&ext).or_else(|| {
+            if ext == "jpeg" { registry.find("jpg") } else { None }
+        });
+        if let Some(fmt) = fmt {
+            if self.source_format.as_deref() != Some(fmt.id) {
+                self.source_format = Some(fmt.id.to_string());
+                self.target_format = None;
+                self.active_category = Some(fmt.category.clone());
+            }
+        }
+    }
 }
 
 pub struct SelectorPanel;
@@ -69,7 +90,7 @@ impl SelectorPanel {
                 Self::draw_format_row(ui, state, registry, main_w);
                 ui.add_space(20.0);
                 widgets::divider(ui);
-                Self::draw_file_row(ui, state, main_w);
+                Self::draw_file_row(ui, state, registry, main_w);
             });
 
             ui.add_space(20.0);
@@ -212,7 +233,7 @@ impl SelectorPanel {
         }
     }
 
-    fn draw_file_row(ui: &mut Ui, state: &mut SelectorState, main_w: f32) {
+    fn draw_file_row(ui: &mut Ui, state: &mut SelectorState, registry: &FormatRegistry, main_w: f32) {
         let gap = 16.0;
         let col_w = (main_w - gap) / 2.0;
         ui.horizontal(|ui| {
@@ -222,7 +243,7 @@ impl SelectorPanel {
                 let label = if multi { "INPUT FILES" } else { "INPUT FILE" };
                 ui.label(RichText::new(label).font(theme::label_font()).color(theme::TEXT_MUTED));
                 ui.add_space(6.0);
-                Self::drop_zone(ui, state, col_w);
+                Self::drop_zone(ui, state, col_w, registry);
                 if state.supports_merge() && state.input_paths.len() > 1 {
                     ui.add_space(6.0);
                     ui.horizontal(|ui| {
@@ -246,7 +267,7 @@ impl SelectorPanel {
         });
     }
 
-    fn drop_zone(ui: &mut Ui, state: &mut SelectorState, width: f32) {
+    fn drop_zone(ui: &mut Ui, state: &mut SelectorState, width: f32, registry: &FormatRegistry) {
         let has_files = !state.input_paths.is_empty();
         let height = if has_files && state.input_paths.len() > 1 {
             (40.0 + state.input_paths.len() as f32 * 18.0).clamp(110.0, 200.0)
@@ -316,6 +337,7 @@ impl SelectorPanel {
             }
             if let Some(paths) = dialog.pick_files() {
                 state.input_paths = paths;
+                state.detect_format_from_paths(registry);
                 if state.input_paths.len() > 1 && state.supports_merge() {
                     state.merge = true;
                 }
@@ -326,6 +348,7 @@ impl SelectorPanel {
         if !dropped.is_empty() {
             let paths: Vec<_> = dropped.into_iter().filter_map(|f| f.path).collect();
             state.input_paths.extend(paths);
+            state.detect_format_from_paths(registry);
             if state.input_paths.len() > 1 && state.supports_merge() {
                 state.merge = true;
             }
