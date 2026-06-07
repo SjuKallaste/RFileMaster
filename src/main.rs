@@ -9,11 +9,8 @@ use eframe::NativeOptions;
 use egui::ViewportBuilder;
 
 fn load_icon() -> Option<egui::IconData> {
-    let icon_path = std::path::Path::new("icon/icon.png");
-    if !icon_path.exists() {
-        return None;
-    }
-    let img = image::open(icon_path).ok()?.into_rgba8();
+    let bytes = include_bytes!("../icon/icon.png");
+    let img = image::load_from_memory(bytes).ok()?.into_rgba8();
     let (w, h) = img.dimensions();
     Some(egui::IconData {
         rgba: img.into_raw(),
