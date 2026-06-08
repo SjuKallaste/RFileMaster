@@ -34,9 +34,13 @@ impl TransmogrifyApp {
 impl eframe::App for TransmogrifyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.runner.tick();
-        ctx.request_repaint_after(std::time::Duration::from_millis(100));
 
         let job_count = self.runner.jobs.lock().unwrap().len();
+        let has_running = self.runner.jobs.lock().unwrap().iter().any(|j| matches!(j.status, crate::conversion::job::JobStatus::Queued | crate::conversion::job::JobStatus::Running(_)));
+
+        if has_running {
+            ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        }
 
         TopBottomPanel::top("header")
             .frame(
