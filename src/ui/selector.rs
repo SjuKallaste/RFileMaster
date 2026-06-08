@@ -89,7 +89,6 @@ impl SelectorPanel {
                 ui.set_width(main_w);
                 Self::draw_format_row(ui, state, registry, main_w);
                 ui.add_space(20.0);
-                widgets::divider(ui);
                 Self::draw_file_row(ui, state, registry, main_w);
             });
 
@@ -98,7 +97,7 @@ impl SelectorPanel {
     }
 
     fn draw_category_sidebar(ui: &mut Ui, state: &mut SelectorState, _registry: &FormatRegistry, w: f32) {
-        widgets::section_label(ui, "CATEGORY");
+        widgets::section_label(ui, "Category");
         ui.add_space(6.0);
         ui.spacing_mut().item_spacing = Vec2::new(0.0, 4.0);
         for cat in FormatCategory::all() {
@@ -150,7 +149,7 @@ impl SelectorPanel {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(col_w);
-                ui.label(RichText::new("FROM").font(theme::label_font()).color(theme::TEXT_MUTED));
+                ui.label(RichText::new("From").font(theme::label_font()).color(theme::TEXT_PRIMARY));
                 ui.add_space(6.0);
                 ComboBox::from_id_source("source_fmt")
                     .selected_text(
@@ -179,7 +178,7 @@ impl SelectorPanel {
 
             ui.vertical(|ui| {
                 ui.set_width(col_w);
-                ui.label(RichText::new("TO").font(theme::label_font()).color(theme::TEXT_MUTED));
+                ui.label(RichText::new("To").font(theme::label_font()).color(theme::TEXT_PRIMARY));
                 ui.add_space(6.0);
 
                 let targets: Vec<&FileFormat> = if let Some(src) = &state.source_format {
@@ -240,8 +239,8 @@ impl SelectorPanel {
             ui.vertical(|ui| {
                 ui.set_width(col_w);
                 let multi = state.input_paths.len() > 1 || state.supports_merge();
-                let label = if multi { "INPUT FILES" } else { "INPUT FILE" };
-                ui.label(RichText::new(label).font(theme::label_font()).color(theme::TEXT_MUTED));
+                let label = if multi { "Input Files" } else { "Input File" };
+                ui.label(RichText::new(label).font(theme::label_font()).color(theme::TEXT_PRIMARY));
                 ui.add_space(6.0);
                 Self::drop_zone(ui, state, col_w, registry);
                 if state.supports_merge() && state.input_paths.len() > 1 {
@@ -260,7 +259,7 @@ impl SelectorPanel {
 
             ui.vertical(|ui| {
                 ui.set_width(col_w);
-                ui.label(RichText::new("OUTPUT DIRECTORY (optional)").font(theme::label_font()).color(theme::TEXT_MUTED));
+                ui.label(RichText::new("Output Directory (optional)").font(theme::label_font()).color(theme::TEXT_PRIMARY));
                 ui.add_space(6.0);
                 Self::output_dir_picker(ui, state, col_w);
             });

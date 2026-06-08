@@ -3,7 +3,7 @@ use crate::theme;
 
 pub fn section_label(ui: &mut Ui, text: &str) {
     ui.add_space(4.0);
-    ui.label(RichText::new(text).font(theme::small_font()).color(theme::TEXT_MUTED));
+    ui.label(RichText::new(text).font(theme::label_font()).color(theme::TEXT_PRIMARY));
     ui.add_space(2.0);
 }
 
