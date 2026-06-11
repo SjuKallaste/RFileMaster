@@ -9,15 +9,6 @@ pub enum JobStatus {
 }
 
 impl JobStatus {
-    pub fn label(&self) -> &str {
-        match self {
-            JobStatus::Queued => "Queued",
-            JobStatus::Running(_) => "Converting",
-            JobStatus::Done(_) => "Done",
-            JobStatus::Failed(_) => "Failed",
-        }
-    }
-
     pub fn is_terminal(&self) -> bool {
         matches!(self, JobStatus::Done(_) | JobStatus::Failed(_))
     }

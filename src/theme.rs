@@ -1,6 +1,5 @@
 use egui::{Color32, FontId, FontFamily, Rounding, Stroke, Style, Visuals};
 
-pub const ROUNDING_NONE: Rounding = Rounding::ZERO;
 pub const ROUNDING_SM: Rounding = Rounding::same(3.0);
 pub const ROUNDING_MD: Rounding = Rounding::same(5.0);
 pub const ROUNDING_LG: Rounding = Rounding::same(7.0);
@@ -136,10 +135,6 @@ pub fn label_font() -> FontId {
 
 pub fn small_font() -> FontId {
     FontId::new(11.0, FontFamily::Proportional)
-}
-
-pub fn mono_font() -> FontId {
-    FontId::new(12.0, FontFamily::Monospace)
 }
 
 use std::cell::RefCell;
