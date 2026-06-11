@@ -25,11 +25,11 @@ impl QueuePanel {
                     ui.label(
                         RichText::new("Conversion Queue")
                             .font(theme::heading_font())
-                            .color(theme::TEXT_PRIMARY),
+                            .color(theme::p().text_primary),
                     );
                     ui.add_space(8.0);
                     if !jobs.is_empty() {
-                        widgets::status_badge(ui, &format!("{} jobs", jobs.len()), theme::ACCENT);
+                        widgets::status_badge(ui, &format!("{} jobs", jobs.len()), theme::p().accent);
                     }
                 });
 
@@ -37,22 +37,22 @@ impl QueuePanel {
 
                 if jobs.is_empty() {
                     Frame::none()
-                        .fill(theme::SURFACE)
+                        .fill(theme::p().surface)
                         .rounding(theme::ROUNDING_LG)
-                        .stroke(Stroke::new(1.0, theme::BASE_DARK))
+                        .stroke(Stroke::new(1.0, theme::p().base_dark))
                         .inner_margin(Margin::same(32.0))
                         .show(ui, |ui| {
                             ui.set_width(panel_w - 2.0);
                             ui.vertical_centered(|ui| {
                                 ui.label(
                                     RichText::new("No conversions in progress")
-                                        .color(theme::TEXT_MUTED)
+                                        .color(theme::p().text_muted)
                                         .font(theme::label_font()),
                                 );
                                 ui.add_space(4.0);
                                 ui.label(
                                     RichText::new("Set up a conversion on the Convert tab and press Convert.")
-                                        .color(theme::TEXT_MUTED)
+                                        .color(theme::p().text_muted)
                                         .font(theme::small_font()),
                                 );
                             });
@@ -66,9 +66,9 @@ impl QueuePanel {
                     ui.set_width(panel_w);
                     for job in &jobs {
                         Frame::none()
-                            .fill(theme::SURFACE)
+                            .fill(theme::p().surface)
                             .rounding(theme::ROUNDING_MD)
-                            .stroke(Stroke::new(1.0, theme::BASE_DARK))
+                            .stroke(Stroke::new(1.0, theme::p().base_dark))
                             .inner_margin(Margin::symmetric(16.0, 12.0))
                             .show(ui, |ui| {
                                 ui.set_width(panel_w - 2.0);
@@ -80,7 +80,7 @@ impl QueuePanel {
                                             ui.label(
                                                 RichText::new(job.display_name())
                                                     .font(theme::label_font())
-                                                    .color(theme::TEXT_PRIMARY),
+                                                    .color(theme::p().text_primary),
                                             );
                                             ui.add_space(6.0);
                                             ui.label(
@@ -90,7 +90,7 @@ impl QueuePanel {
                                                     job.target_format.to_uppercase()
                                                 ))
                                                     .font(theme::small_font())
-                                                    .color(theme::TEXT_MUTED),
+                                                    .color(theme::p().text_muted),
                                             );
                                         });
 
@@ -101,20 +101,20 @@ impl QueuePanel {
                                                 ui.label(
                                                     RichText::new("Waiting...")
                                                         .font(theme::small_font())
-                                                        .color(theme::TEXT_MUTED),
+                                                        .color(theme::p().text_muted),
                                                 );
                                             }
-                                            JobStatus::Running(p) => {
+                                            JobStatus::Running(progress) => {
                                                 ui.add(
-                                                    ProgressBar::new(*p)
-                                                        .fill(theme::ACCENT)
+                                                    ProgressBar::new(*progress)
+                                                        .fill(theme::p().accent)
                                                         .desired_width(panel_w - 160.0)
                                                         .animate(true),
                                                 );
                                             }
                                             JobStatus::Done(out) => {
                                                 ui.horizontal(|ui| {
-                                                    widgets::status_badge(ui, "Done", theme::SUCCESS);
+                                                    widgets::status_badge(ui, "Done", theme::p().success);
                                                     ui.add_space(6.0);
                                                     ui.label(
                                                         RichText::new(
@@ -123,17 +123,17 @@ impl QueuePanel {
                                                                 .unwrap_or("output"),
                                                         )
                                                             .font(theme::small_font())
-                                                            .color(theme::TEXT_SECONDARY),
+                                                            .color(theme::p().text_secondary),
                                                     );
                                                 });
                                             }                                            JobStatus::Failed(e) => {
                                                 ui.horizontal(|ui| {
-                                                    widgets::status_badge(ui, "Failed", theme::ERROR);
+                                                    widgets::status_badge(ui, "Failed", theme::p().error);
                                                     ui.add_space(6.0);
                                                     ui.label(
                                                         RichText::new(e.as_str())
                                                             .font(theme::small_font())
-                                                            .color(theme::ERROR),
+                                                            .color(theme::p().error),
                                                     );
                                                 });
                                             }

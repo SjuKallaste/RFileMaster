@@ -44,7 +44,7 @@ impl SelectorState {
 
     pub fn detect_format_from_paths(&mut self, registry: &FormatRegistry) {
         let ext = self.input_paths.first()
-            .and_then(|p| p.extension())
+            .and_then(|path| path.extension())
             .and_then(|e| e.to_str())
             .map(|e| e.to_lowercase());
         let ext = match ext {
@@ -114,15 +114,16 @@ impl SelectorPanel {
     }
 
     fn sidebar_button(ui: &mut Ui, label: &str, selected: bool, width: f32) -> egui::Response {
+        let p = theme::p();
         let size = Vec2::new(width, 30.0);
         let (rect, response) = ui.allocate_exact_size(size, Sense::click());
         if ui.is_rect_visible(rect) {
             let (bg, fg) = if selected {
-                (theme::ACCENT, theme::TEXT_PRIMARY)
+                (p.accent, p.text_primary)
             } else if response.hovered() {
-                (theme::SURFACE_HIGH, theme::TEXT_PRIMARY)
+                (p.surface_high, p.text_primary)
             } else {
-                (Color32::TRANSPARENT, theme::TEXT_SECONDARY)
+                (Color32::TRANSPARENT, p.text_secondary)
             };
             ui.painter().rect(rect, theme::ROUNDING_SM, bg, Stroke::NONE);
             ui.painter().text(
@@ -137,6 +138,7 @@ impl SelectorPanel {
     }
 
     fn draw_format_row(ui: &mut Ui, state: &mut SelectorState, registry: &FormatRegistry, main_w: f32) {
+        let p = theme::p();
         let formats: Vec<&FileFormat> = if let Some(cat) = &state.active_category {
             registry.formats_in_category(cat)
         } else {
@@ -149,7 +151,7 @@ impl SelectorPanel {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(col_w);
-                ui.label(RichText::new("From").font(theme::label_font()).color(theme::TEXT_PRIMARY));
+                ui.label(RichText::new("From").font(theme::label_font()).color(p.text_primary));
                 ui.add_space(6.0);
                 ComboBox::from_id_source("source_fmt")
                     .selected_text(
@@ -160,7 +162,7 @@ impl SelectorPanel {
                     )
                     .width(col_w)
                     .show_ui(ui, |ui| {
-                        ui.style_mut().visuals.widgets.noninteractive.bg_fill = theme::SURFACE_HIGH;
+                        ui.style_mut().visuals.widgets.noninteractive.bg_fill = p.surface_high;
                         for fmt in &formats {
                             let selected = state.source_format.as_deref() == Some(fmt.id);
                             if ui.selectable_label(selected, fmt.display()).clicked() {
@@ -178,7 +180,7 @@ impl SelectorPanel {
 
             ui.vertical(|ui| {
                 ui.set_width(col_w);
-                ui.label(RichText::new("To").font(theme::label_font()).color(theme::TEXT_PRIMARY));
+                ui.label(RichText::new("To").font(theme::label_font()).color(p.text_primary));
                 ui.add_space(6.0);
 
                 let targets: Vec<&FileFormat> = if let Some(src) = &state.source_format {
@@ -227,12 +229,13 @@ impl SelectorPanel {
             ui.label(
                 RichText::new(format!("{} -> {}{}", src_label, tgt_label, suffix))
                     .font(theme::small_font())
-                    .color(theme::SUCCESS),
+                    .color(p.success),
             );
         }
     }
 
     fn draw_file_row(ui: &mut Ui, state: &mut SelectorState, registry: &FormatRegistry, main_w: f32) {
+        let p = theme::p();
         let gap = 16.0;
         let col_w = (main_w - gap) / 2.0;
         ui.horizontal(|ui| {
@@ -240,7 +243,7 @@ impl SelectorPanel {
                 ui.set_width(col_w);
                 let multi = state.input_paths.len() > 1 || state.supports_merge();
                 let label = if multi { "Input Files" } else { "Input File" };
-                ui.label(RichText::new(label).font(theme::label_font()).color(theme::TEXT_PRIMARY));
+                ui.label(RichText::new(label).font(theme::label_font()).color(p.text_primary));
                 ui.add_space(6.0);
                 Self::drop_zone(ui, state, col_w, registry);
                 if state.supports_merge() && state.input_paths.len() > 1 {
@@ -249,7 +252,7 @@ impl SelectorPanel {
                         ui.checkbox(&mut state.merge,
                                     RichText::new("Merge into one file")
                                         .font(theme::small_font())
-                                        .color(theme::TEXT_SECONDARY),
+                                        .color(p.text_secondary),
                         );
                     });
                 }
@@ -259,7 +262,7 @@ impl SelectorPanel {
 
             ui.vertical(|ui| {
                 ui.set_width(col_w);
-                ui.label(RichText::new("Output Directory (optional)").font(theme::label_font()).color(theme::TEXT_PRIMARY));
+                ui.label(RichText::new("Output Directory (optional)").font(theme::label_font()).color(p.text_primary));
                 ui.add_space(6.0);
                 Self::output_dir_picker(ui, state, col_w);
             });
@@ -267,6 +270,7 @@ impl SelectorPanel {
     }
 
     fn drop_zone(ui: &mut Ui, state: &mut SelectorState, width: f32, registry: &FormatRegistry) {
+        let p = theme::p();
         let has_files = !state.input_paths.is_empty();
         let height = if has_files && state.input_paths.len() > 1 {
             (40.0 + state.input_paths.len() as f32 * 18.0).clamp(110.0, 200.0)
@@ -278,11 +282,11 @@ impl SelectorPanel {
         let is_drag = ui.ctx().input(|i| !i.raw.hovered_files.is_empty());
 
         let (bg, stroke_col) = if is_drag {
-            (Color32::from_rgba_unmultiplied(0x9b, 0x6e, 0xd8, 22), theme::ACCENT)
+            (Color32::from_rgba_unmultiplied(p.accent.r(), p.accent.g(), p.accent.b(), 22), p.accent)
         } else if response.hovered() {
-            (theme::SURFACE_HIGH, theme::BASE_LIGHT)
+            (p.surface_high, p.base_light)
         } else {
-            (theme::SURFACE_RAISED, theme::BASE)
+            (p.surface_raised, p.base)
         };
 
         if ui.is_rect_visible(rect) {
@@ -294,7 +298,7 @@ impl SelectorPanel {
                     egui::Align2::CENTER_CENTER,
                     "Drop files here or click to browse",
                     FontId::new(12.0, egui::FontFamily::Proportional),
-                    theme::TEXT_MUTED,
+                    p.text_muted,
                 );
             } else if state.input_paths.len() == 1 {
                 let name = state.input_paths[0].file_name().and_then(|n| n.to_str()).unwrap_or("file selected");
@@ -303,7 +307,7 @@ impl SelectorPanel {
                     egui::Align2::CENTER_CENTER,
                     name,
                     FontId::new(13.0, egui::FontFamily::Proportional),
-                    theme::TEXT_PRIMARY,
+                    p.text_primary,
                 );
             } else {
                 let top = rect.min.y + 10.0;
@@ -312,10 +316,10 @@ impl SelectorPanel {
                     egui::Align2::LEFT_TOP,
                     format!("{} files selected", state.input_paths.len()),
                     FontId::new(11.0, egui::FontFamily::Proportional),
-                    theme::ACCENT_BRIGHT,
+                    p.accent_bright,
                 );
-                for (i, p) in state.input_paths.iter().enumerate() {
-                    let name = p.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+                for (i, path_entry) in state.input_paths.iter().enumerate() {
+                    let name = path_entry.file_name().and_then(|n| n.to_str()).unwrap_or("?");
                     let y = top + 20.0 + i as f32 * 18.0;
                     if y + 16.0 > rect.max.y { break; }
                     ui.painter().text(
@@ -323,7 +327,7 @@ impl SelectorPanel {
                         egui::Align2::LEFT_TOP,
                         name,
                         FontId::new(11.0, egui::FontFamily::Proportional),
-                        theme::TEXT_SECONDARY,
+                        p.text_secondary,
                     );
                 }
             }
@@ -355,22 +359,23 @@ impl SelectorPanel {
     }
 
     fn output_dir_picker(ui: &mut Ui, state: &mut SelectorState, width: f32) {
+        let p = theme::p();
         let (rect, response) = ui.allocate_exact_size(Vec2::new(width, 110.0), Sense::click());
 
         let (bg, stroke_col) = if response.hovered() {
-            (theme::SURFACE_HIGH, theme::BASE_LIGHT)
+            (p.surface_high, p.base_light)
         } else {
-            (theme::SURFACE_RAISED, theme::BASE)
+            (p.surface_raised, p.base)
         };
 
         if ui.is_rect_visible(rect) {
             ui.painter().rect(rect, theme::ROUNDING_SM, bg, Stroke::new(1.0, stroke_col));
-            let text = if let Some(p) = &state.output_dir {
-                p.to_string_lossy().to_string()
+            let text = if let Some(dir) = &state.output_dir {
+                dir.to_string_lossy().to_string()
             } else {
                 "Same as input (default)".to_string()
             };
-            let color = if state.output_dir.is_some() { theme::TEXT_PRIMARY } else { theme::TEXT_MUTED };
+            let color = if state.output_dir.is_some() { p.text_primary } else { p.text_muted };
             ui.painter().text(
                 rect.center(),
                 egui::Align2::CENTER_CENTER,

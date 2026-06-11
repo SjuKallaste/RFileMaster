@@ -19,13 +19,15 @@ pub struct TransmogrifyApp {
 
 impl TransmogrifyApp {
     pub fn new(cc: &CreationContext<'_>) -> Self {
-        theme::apply(&cc.egui_ctx);
+        let settings = AppSettings::default();
+        theme::set(settings.dark_mode);
+        theme::apply(&cc.egui_ctx, settings.dark_mode);
         let registry = REGISTRY.get_or_init(init_registry);
         Self {
             active_tab: Tab::Convert,
             selector: SelectorState::new(),
             runner: ConversionRunner::new(),
-            settings: AppSettings::default(),
+            settings,
             registry,
         }
     }
@@ -35,6 +37,10 @@ impl eframe::App for TransmogrifyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.runner.tick();
 
+        theme::set(self.settings.dark_mode);
+        theme::apply(ctx, self.settings.dark_mode);
+
+        let p = theme::p();
         let job_count = self.runner.jobs.lock().unwrap().len();
         let has_running = self.runner.jobs.lock().unwrap().iter().any(|j| matches!(j.status, crate::conversion::job::JobStatus::Queued | crate::conversion::job::JobStatus::Running(_)));
 
@@ -45,7 +51,7 @@ impl eframe::App for TransmogrifyApp {
         TopBottomPanel::top("header")
             .frame(
                 Frame::none()
-                    .fill(theme::TITLEBAR)
+                    .fill(p.titlebar)
                     .inner_margin(Margin::symmetric(0.0, 14.0)),
             )
             .show(ctx, |ui| {
@@ -57,7 +63,7 @@ impl eframe::App for TransmogrifyApp {
             TopBottomPanel::bottom("action_bar")
                 .frame(
                     Frame::none()
-                        .fill(theme::BASE_DARKER)
+                        .fill(p.base_darker)
                         .inner_margin(Margin::symmetric(32.0, 16.0)),
                 )
                 .show(ctx, |ui| {
@@ -99,7 +105,7 @@ impl eframe::App for TransmogrifyApp {
         CentralPanel::default()
             .frame(
                 Frame::none()
-                    .fill(theme::BASE_DARKER)
+                    .fill(p.base_darker)
                     .inner_margin(Margin::same(0.0)),
             )
             .show(ctx, |ui| {

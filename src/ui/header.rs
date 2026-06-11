@@ -12,12 +12,13 @@ pub struct HeaderBar;
 
 impl HeaderBar {
     pub fn show(ui: &mut Ui, active_tab: &mut Tab, job_count: usize) {
+        let p = theme::p();
         ui.horizontal(|ui| {
             ui.add_space(16.0);
             ui.label(
                 RichText::new("RFileMaster")
                     .font(theme::heading_font())
-                    .color(theme::ACCENT_BRIGHT)
+                    .color(p.accent_bright)
                     .strong(),
             );
 
@@ -39,7 +40,7 @@ impl HeaderBar {
 
                 let text = RichText::new(display)
                     .font(theme::label_font())
-                    .color(if is_active { theme::ACCENT_BRIGHT } else { theme::TEXT_SECONDARY });
+                    .color(if is_active { p.accent_bright } else { p.text_secondary });
 
                 let response = ui.selectable_label(is_active, text);
                 if response.clicked() {

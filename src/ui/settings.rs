@@ -9,6 +9,7 @@ pub struct AppSettings {
     pub overwrite_existing: bool,
     pub default_output_dir: Option<std::path::PathBuf>,
     pub max_concurrent_jobs: usize,
+    pub dark_mode: bool,
 }
 
 impl Default for AppSettings {
@@ -18,6 +19,7 @@ impl Default for AppSettings {
             overwrite_existing: false,
             default_output_dir: None,
             max_concurrent_jobs: 2,
+            dark_mode: true,
         }
     }
 }
@@ -39,37 +41,54 @@ impl SettingsPanel {
                 ui.label(
                     RichText::new("Settings")
                         .font(theme::heading_font())
-                        .color(theme::TEXT_PRIMARY),
+                        .color(theme::p().text_primary),
                 );
                 ui.add_space(16.0);
 
                 Frame::none()
-                    .fill(theme::SURFACE)
+                    .fill(theme::p().surface)
                     .rounding(theme::ROUNDING_MD)
-                    .stroke(Stroke::new(1.0, theme::BASE_DARK))
+                    .stroke(Stroke::new(1.0, theme::p().base_dark))
                     .inner_margin(Margin::same(20.0))
                     .show(ui, |ui| {
                         ui.set_width(panel_w - 2.0);
 
-                        widgets::section_label(ui, "OUTPUT BEHAVIOUR");
+                        widgets::section_label(ui, "Appearance");
+                        ui.add_space(4.0);
+
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                RichText::new("Theme:")
+                                    .font(theme::label_font())
+                                    .color(theme::p().text_secondary),
+                            );
+                            ui.add_space(8.0);
+                            let dark_label = if settings.dark_mode { "Dark" } else { "Light" };
+                            if ui.button(RichText::new(dark_label).font(theme::label_font())).clicked() {
+                                settings.dark_mode = !settings.dark_mode;
+                            }
+                        });
+
+                        widgets::divider(ui);
+                        widgets::section_label(ui, "Output behaviour");
                         ui.add_space(4.0);
 
                         ui.checkbox(
                             &mut settings.auto_open_output,
                             RichText::new("Open output folder when conversion finishes")
                                 .font(theme::label_font())
-                                .color(theme::TEXT_PRIMARY),
+                                .color(theme::p().text_primary),
                         );
                         ui.add_space(4.0);
                         ui.checkbox(
                             &mut settings.overwrite_existing,
                             RichText::new("Overwrite existing files without prompting")
                                 .font(theme::label_font())
-                                .color(theme::TEXT_PRIMARY),
+                                .color(theme::p().text_primary),
                         );
 
                         widgets::divider(ui);
-                        widgets::section_label(ui, "DEFAULT OUTPUT DIRECTORY");
+                        widgets::section_label(ui, "Default output directory");
                         ui.add_space(4.0);
 
                         ui.horizontal(|ui| {
@@ -82,9 +101,9 @@ impl SettingsPanel {
                                 RichText::new(dir_label)
                                     .font(theme::label_font())
                                     .color(if settings.default_output_dir.is_some() {
-                                        theme::TEXT_PRIMARY
+                                        theme::p().text_primary
                                     } else {
-                                        theme::TEXT_MUTED
+                                        theme::p().text_muted
                                     }),
                             );
                             ui.add_space(8.0);
@@ -101,14 +120,14 @@ impl SettingsPanel {
                         });
 
                         widgets::divider(ui);
-                        widgets::section_label(ui, "CONCURRENCY");
+                        widgets::section_label(ui, "Concurrency");
                         ui.add_space(4.0);
 
                         ui.horizontal(|ui| {
                             ui.label(
                                 RichText::new("Max simultaneous conversions:")
                                     .font(theme::label_font())
-                                    .color(theme::TEXT_SECONDARY),
+                                    .color(theme::p().text_secondary),
                             );
                             ui.add_space(8.0);
                             let mut val = settings.max_concurrent_jobs as u32;
