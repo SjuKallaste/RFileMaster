@@ -39,8 +39,15 @@ impl Default for AppSettings {
             overwrite_existing: false,
             default_output_dir: None,
             max_concurrent_jobs: 2,
-            theme: Theme::Dark,
+            theme: detect_system_theme(),
         }
+    }
+}
+
+pub fn detect_system_theme() -> Theme {
+    match dark_light::detect() {
+        dark_light::Mode::Dark | dark_light::Mode::Default => Theme::Dark,
+        dark_light::Mode::Light => Theme::Light,
     }
 }
 
