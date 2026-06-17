@@ -66,53 +66,62 @@ pub fn light() -> Palette {
     }
 }
 
-pub fn apply(ctx: &egui::Context, dark_mode: bool) {
-    let p = if dark_mode { dark() } else { light() };
+pub fn apply(ctx: &egui::Context, theme: &Theme) {
+    let p = match theme {
+        Theme::Dark => dark(),
+        Theme::Light => light(),
+        Theme::HighContrast => high_contrast(),
+    };
     let mut style = Style::default();
-    let mut visuals = if dark_mode { Visuals::dark() } else { Visuals::light() };
+    let mut visuals = if matches!(theme, Theme::Light) { Visuals::light() } else { Visuals::dark() };
 
     visuals.window_fill = p.surface;
     visuals.panel_fill = p.base_darker;
     visuals.faint_bg_color = p.surface;
-    visuals.extreme_bg_color = if dark_mode {
-        Color32::from_rgb(0x18, 0x16, 0x1c)
-    } else {
+    visuals.extreme_bg_color = if matches!(theme, Theme::Light) {
         Color32::from_rgb(0xff, 0xff, 0xff)
+    } else if matches!(theme, Theme::HighContrast) {
+        Color32::from_rgb(0x00, 0x00, 0x00)
+    } else {
+        Color32::from_rgb(0x18, 0x16, 0x1c)
     };
 
-    visuals.widgets.noninteractive.bg_fill = p.surface_raised;
+    let border_w = if matches!(theme, Theme::HighContrast) { 1.5 } else { 1.0 };
+    let inactive_fill = if matches!(theme, Theme::HighContrast) { Color32::TRANSPARENT } else { p.surface_raised };
+
+    visuals.widgets.noninteractive.bg_fill = inactive_fill;
     visuals.widgets.noninteractive.weak_bg_fill = p.surface;
-    visuals.widgets.noninteractive.fg_stroke = Stroke::new(1.0, p.text_secondary);
-    visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0, p.base_dark);
+    visuals.widgets.noninteractive.fg_stroke = Stroke::new(border_w, p.text_secondary);
+    visuals.widgets.noninteractive.bg_stroke = Stroke::new(border_w, p.base_dark);
     visuals.widgets.noninteractive.rounding = ROUNDING_SM;
 
-    visuals.widgets.inactive.bg_fill = p.surface_raised;
+    visuals.widgets.inactive.bg_fill = inactive_fill;
     visuals.widgets.inactive.weak_bg_fill = p.surface;
-    visuals.widgets.inactive.fg_stroke = Stroke::new(1.0, p.text_secondary);
-    visuals.widgets.inactive.bg_stroke = Stroke::new(1.0, p.base);
+    visuals.widgets.inactive.fg_stroke = Stroke::new(border_w, p.text_secondary);
+    visuals.widgets.inactive.bg_stroke = Stroke::new(border_w, p.base);
     visuals.widgets.inactive.rounding = ROUNDING_SM;
 
     visuals.widgets.hovered.bg_fill = p.surface_high;
     visuals.widgets.hovered.weak_bg_fill = p.surface_raised;
-    visuals.widgets.hovered.fg_stroke = Stroke::new(1.5, p.text_primary);
-    visuals.widgets.hovered.bg_stroke = Stroke::new(1.5, p.accent);
+    visuals.widgets.hovered.fg_stroke = Stroke::new(border_w + 0.5, p.text_primary);
+    visuals.widgets.hovered.bg_stroke = Stroke::new(border_w + 0.5, p.accent);
     visuals.widgets.hovered.rounding = ROUNDING_SM;
 
     visuals.widgets.active.bg_fill = p.accent_dim;
     visuals.widgets.active.weak_bg_fill = p.surface_high;
-    visuals.widgets.active.fg_stroke = Stroke::new(2.0, p.text_primary);
-    visuals.widgets.active.bg_stroke = Stroke::new(2.0, p.accent);
+    visuals.widgets.active.fg_stroke = Stroke::new(border_w + 1.0, p.text_primary);
+    visuals.widgets.active.bg_stroke = Stroke::new(border_w + 1.0, p.accent);
     visuals.widgets.active.rounding = ROUNDING_SM;
 
     visuals.widgets.open.bg_fill = p.surface_high;
-    visuals.widgets.open.fg_stroke = Stroke::new(1.5, p.accent);
-    visuals.widgets.open.bg_stroke = Stroke::new(1.5, p.accent);
+    visuals.widgets.open.fg_stroke = Stroke::new(border_w, p.accent);
+    visuals.widgets.open.bg_stroke = Stroke::new(border_w, p.accent);
     visuals.widgets.open.rounding = ROUNDING_SM;
 
     visuals.selection.bg_fill = p.accent_dim;
     visuals.selection.stroke = Stroke::new(1.0, p.accent);
     visuals.window_rounding = ROUNDING_MD;
-    visuals.window_stroke = Stroke::new(1.0, p.base_dark);
+    visuals.window_stroke = Stroke::new(if matches!(theme, Theme::HighContrast) { 2.0 } else { 1.0 }, p.base_dark);
     visuals.popup_shadow = egui::epaint::Shadow::NONE;
     visuals.window_shadow = egui::epaint::Shadow::NONE;
 
@@ -137,14 +146,39 @@ pub fn small_font() -> FontId {
     FontId::new(11.0, FontFamily::Proportional)
 }
 
-use std::cell::RefCell;
-
-thread_local! {
-    static CURRENT: RefCell<Palette> = RefCell::new(dark());
+pub fn high_contrast() -> Palette {
+    Palette {
+        base: Color32::from_rgb(0xff, 0xff, 0xff),
+        base_dark: Color32::from_rgb(0x6f, 0x6f, 0x6f),
+        base_darker: Color32::from_rgb(0x00, 0x00, 0x00),
+        base_light: Color32::from_rgb(0xff, 0xff, 0xff),
+        titlebar: Color32::from_rgb(0x00, 0x00, 0x00),
+        accent: Color32::from_rgb(0x00, 0xb7, 0xff),
+        accent_dim: Color32::from_rgb(0x00, 0x40, 0x6f),
+        accent_bright: Color32::from_rgb(0x00, 0xb7, 0xff),
+        surface: Color32::from_rgb(0x00, 0x00, 0x00),
+        surface_raised: Color32::from_rgb(0x0a, 0x0a, 0x0a),
+        surface_high: Color32::from_rgb(0x1a, 0x1a, 0x1a),
+        text_primary: Color32::from_rgb(0xff, 0xff, 0xff),
+        text_secondary: Color32::from_rgb(0xcc, 0xcc, 0xcc),
+        text_muted: Color32::from_rgb(0x99, 0x99, 0x99),
+        success: Color32::from_rgb(0x4e, 0xc9, 0x94),
+        error: Color32::from_rgb(0xf4, 0x85, 0x71),
+    }
 }
 
-pub fn set(dark_mode: bool) {
-    CURRENT.with(|c| *c.borrow_mut() = if dark_mode { dark() } else { light() });
+use crate::ui::settings::Theme;
+
+thread_local! {
+    static CURRENT: std::cell::RefCell<Palette> = std::cell::RefCell::new(dark());
+}
+
+pub fn set(theme: &Theme) {
+    CURRENT.with(|c| *c.borrow_mut() = match theme {
+        Theme::Dark => dark(),
+        Theme::Light => light(),
+        Theme::HighContrast => high_contrast(),
+    });
 }
 
 pub fn p() -> Palette {

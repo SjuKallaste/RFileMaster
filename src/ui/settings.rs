@@ -1,7 +1,27 @@
-use egui::{Frame, Margin, RichText, Stroke, Ui, Vec2};
+use egui::{ComboBox, Frame, Margin, RichText, Stroke, Ui, Vec2};
 use crate::theme;
 use crate::ui::widgets;
 use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum Theme {
+    Dark,
+    Light,
+    HighContrast,
+}
+
+impl Theme {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Theme::Dark => "Dark",
+            Theme::Light => "Light",
+            Theme::HighContrast => "High Contrast",
+        }
+    }
+    pub fn all() -> [Theme; 3] {
+        [Theme::Dark, Theme::Light, Theme::HighContrast]
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppSettings {
@@ -9,7 +29,7 @@ pub struct AppSettings {
     pub overwrite_existing: bool,
     pub default_output_dir: Option<std::path::PathBuf>,
     pub max_concurrent_jobs: usize,
-    pub dark_mode: bool,
+    pub theme: Theme,
 }
 
 impl Default for AppSettings {
@@ -19,7 +39,7 @@ impl Default for AppSettings {
             overwrite_existing: false,
             default_output_dir: None,
             max_concurrent_jobs: 2,
-            dark_mode: true,
+            theme: Theme::Dark,
         }
     }
 }
@@ -54,19 +74,22 @@ impl SettingsPanel {
                         ui.set_width(panel_w - 2.0);
 
                         widgets::section_label(ui, "Appearance");
-                        ui.add_space(4.0);
+                        ui.add_space(6.0);
 
                         ui.horizontal(|ui| {
-                            ui.label(
-                                RichText::new("Theme:")
-                                    .font(theme::label_font())
-                                    .color(theme::p().text_secondary),
-                            );
+                            ui.label(RichText::new("Theme").font(theme::label_font()).color(theme::p().text_secondary));
                             ui.add_space(8.0);
-                            let dark_label = if settings.dark_mode { "Dark" } else { "Light" };
-                            if ui.button(RichText::new(dark_label).font(theme::label_font())).clicked() {
-                                settings.dark_mode = !settings.dark_mode;
-                            }
+                            ComboBox::from_id_source("theme_select")
+                                .selected_text(settings.theme.label())
+                                .width(160.0)
+                                .show_ui(ui, |ui| {
+                                    for t in Theme::all() {
+                                        let selected = settings.theme == t;
+                                        if ui.selectable_label(selected, t.label()).clicked() {
+                                            settings.theme = t;
+                                        }
+                                    }
+                                });
                         });
 
                         widgets::divider(ui);

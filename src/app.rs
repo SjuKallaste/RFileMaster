@@ -20,8 +20,8 @@ pub struct TransmogrifyApp {
 impl TransmogrifyApp {
     pub fn new(cc: &CreationContext<'_>) -> Self {
         let settings = AppSettings::default();
-        theme::set(settings.dark_mode);
-        theme::apply(&cc.egui_ctx, settings.dark_mode);
+        theme::set(&settings.theme);
+        theme::apply(&cc.egui_ctx, &settings.theme);
         let registry = REGISTRY.get_or_init(init_registry);
         Self {
             active_tab: Tab::Convert,
@@ -37,8 +37,8 @@ impl eframe::App for TransmogrifyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.runner.tick();
 
-        theme::set(self.settings.dark_mode);
-        theme::apply(ctx, self.settings.dark_mode);
+        theme::set(&self.settings.theme);
+        theme::apply(ctx, &self.settings.theme);
 
         let p = theme::p();
         let job_count = self.runner.jobs.lock().unwrap().len();
