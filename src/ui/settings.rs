@@ -38,7 +38,7 @@ impl Default for AppSettings {
             auto_open_output: false,
             overwrite_existing: false,
             default_output_dir: None,
-            max_concurrent_jobs: 2,
+            max_concurrent_jobs: (std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4) / 2).max(1),
             theme: detect_system_theme(),
         }
     }
