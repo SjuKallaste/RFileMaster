@@ -3,6 +3,7 @@ use std::fs;
 use std::io::{Read, Write};
 use image::ImageFormat;
 use printpdf::{Mm, PdfDocument, Image as PdfImage, ImageTransform, ImageXObject, ColorSpace, ColorBits};
+use crate::conversion::external;
 
 pub fn convert(inputs: &[PathBuf], source: &str, target: &str, output_path: &Path, merge: bool) -> Result<(), String> {
     if inputs.is_empty() {
@@ -52,6 +53,17 @@ pub fn convert(inputs: &[PathBuf], source: &str, target: &str, output_path: &Pat
         ("epub", "html") => batch_or_single(inputs, output_path, merge, epub_to_html),
         ("zip", "tar_gz") => batch_or_single(inputs, output_path, merge, zip_to_tar_gz),
         ("tar_gz", "zip") | ("tar", "zip") => batch_or_single(inputs, output_path, merge, tar_gz_to_zip),
+
+        (s, t) if is_audio(s) && is_audio(t) => batch_or_single(inputs, output_path, merge, |i, o| external::ffmpeg_audio(i, o, t)),
+        (s, t) if is_video(s) && (is_video(t) || is_audio(t)) => batch_or_single(inputs, output_path, merge, |i, o| external::ffmpeg_video(i, o, t)),
+        (s, "gif") if is_video(s) => batch_or_single(inputs, output_path, merge, |i, o| external::ffmpeg_video(i, o, "gif")),
+
+        ("docx", t) if matches!(t, "pdf"|"txt"|"html"|"md"|"odt"|"rtf") => batch_or_single(inputs, output_path, merge, |i, o| docx_via_libreoffice_or_pandoc(i, o, t)),
+        ("odt", t) if matches!(t, "pdf"|"txt"|"html"|"docx") => batch_or_single(inputs, output_path, merge, |i, o| external::libreoffice_convert(i, t, o.parent().unwrap_or(Path::new(".")))),
+        ("pdf", t) if matches!(t, "docx"|"html"|"md") => batch_or_single(inputs, output_path, merge, |i, o| external::pandoc(i, o, &[])),
+        (s, "pdf") if matches!(s, "docx"|"odt"|"html"|"md") => batch_or_single(inputs, output_path, merge, |i, o| doc_to_pdf(i, o, s)),
+        ("pptx", "pdf") => batch_or_single(inputs, output_path, merge, |i, o| external::libreoffice_convert(i, "pdf", o.parent().unwrap_or(Path::new(".")))),
+        ("pptx", "html") => batch_or_single(inputs, output_path, merge, |i, o| external::pandoc(i, o, &[])),
         _ => Err(format!("Conversion from {} to {} requires an external tool and is not supported natively", source, target)),
     }
 }
@@ -77,6 +89,33 @@ pub fn supports_merge(source: &str, target: &str) -> bool {
 
 fn is_raster_image(fmt: &str) -> bool {
     matches!(fmt, "png"|"jpg"|"jpeg"|"webp"|"bmp"|"tiff"|"gif"|"ico")
+}
+
+fn is_audio(fmt: &str) -> bool {
+    matches!(fmt, "mp3"|"wav"|"flac"|"ogg"|"aac"|"m4a"|"opus"|"wma"|"aiff")
+}
+
+fn is_video(fmt: &str) -> bool {
+    matches!(fmt, "mp4"|"mkv"|"webm"|"avi"|"mov"|"flv"|"wmv"|"m4v"|"3gp"|"ts")
+}
+
+fn docx_via_libreoffice_or_pandoc(input: &Path, output: &Path, target: &str) -> Result<(), String> {
+    if external::ExternalTool::LibreOffice.find().is_some() {
+        let out_dir = output.parent().unwrap_or(Path::new("."));
+        external::libreoffice_convert(input, target, out_dir)
+    } else {
+        external::pandoc(input, output, &[])
+    }
+}
+
+fn doc_to_pdf(input: &Path, output: &Path, source: &str) -> Result<(), String> {
+    if source == "md" || source == "html" {
+        if external::ExternalTool::Pandoc.find().is_some() {
+            return external::pandoc(input, output, &["--pdf-engine=xelatex"]);
+        }
+    }
+    let out_dir = output.parent().unwrap_or(Path::new("."));
+    external::libreoffice_convert(input, "pdf", out_dir)
 }
 
 fn ext_to_image_format(ext: &str) -> Option<ImageFormat> {

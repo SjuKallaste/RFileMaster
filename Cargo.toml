@@ -33,6 +33,7 @@ svg2pdf = "0.13"
 calamine = "0.35"
 rust_xlsxwriter = "0.95"
 docx-rs = "0.4"
+which = "8"
 
 [build-dependencies]
 winres = "0.1"
