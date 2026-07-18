@@ -121,10 +121,12 @@ pub fn init_registry() -> FormatRegistry {
         FileFormat { id: "toml", label: "TOML", extension: "toml", category: FormatCategory::Data, mime: "application/toml" },
         FileFormat { id: "xlsx", label: "Excel XLSX", extension: "xlsx", category: FormatCategory::Data, mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
         FileFormat { id: "xls", label: "Excel XLS", extension: "xls", category: FormatCategory::Data, mime: "application/vnd.ms-excel" },
+        FileFormat { id: "ods", label: "OpenDocument Spreadsheet", extension: "ods", category: FormatCategory::Data, mime: "application/vnd.oasis.opendocument.spreadsheet" },
 
         FileFormat { id: "zip", label: "ZIP", extension: "zip", category: FormatCategory::Archive, mime: "application/zip" },
         FileFormat { id: "tar", label: "TAR", extension: "tar", category: FormatCategory::Archive, mime: "application/x-tar" },
         FileFormat { id: "tar_gz", label: "TAR.GZ", extension: "tar.gz", category: FormatCategory::Archive, mime: "application/gzip" },
+        FileFormat { id: "7z", label: "7-Zip", extension: "7z", category: FormatCategory::Archive, mime: "application/x-7z-compressed" },
     ];
 
     let mut compat: HashMap<&'static str, Vec<&'static str>> = HashMap::new();
@@ -139,7 +141,7 @@ pub fn init_registry() -> FormatRegistry {
     compat.insert("svg", vec!["png","jpg","pdf","webp","bmp"]);
 
     compat.insert("pdf", vec!["txt","docx","html","md"]);
-    compat.insert("txt", vec!["md","html","pdf"]);
+    compat.insert("txt", vec!["md","html","pdf","png","svg"]);
     compat.insert("md", vec!["html","txt","pdf"]);
     compat.insert("html", vec!["txt","md","pdf"]);
     compat.insert("rtf", vec!["txt","pdf","docx"]);
@@ -170,17 +172,19 @@ pub fn init_registry() -> FormatRegistry {
     compat.insert("ts", vec!["mp4","mkv"]);
 
     compat.insert("json", vec!["csv","xml","yaml","toml","xlsx"]);
-    compat.insert("csv", vec!["json","xml","tsv","xlsx"]);
+    compat.insert("csv", vec!["json","xml","tsv","xlsx","png","svg"]);
     compat.insert("tsv", vec!["csv","json"]);
     compat.insert("xml", vec!["json","csv","yaml"]);
     compat.insert("yaml", vec!["json","toml","xml"]);
     compat.insert("toml", vec!["json","yaml"]);
     compat.insert("xlsx", vec!["csv","json"]);
     compat.insert("xls", vec!["xlsx","csv","json"]);
+    compat.insert("ods", vec!["xlsx","csv","json"]);
 
     compat.insert("zip", vec!["tar_gz"]);
-    compat.insert("tar", vec!["zip"]);
+    compat.insert("tar", vec!["zip","tar_gz"]);
     compat.insert("tar_gz", vec!["zip"]);
+    compat.insert("7z", vec!["zip","tar_gz"]);
 
     FormatRegistry { formats, compatibility: compat }
 }

@@ -53,6 +53,20 @@ pub fn convert(inputs: &[PathBuf], source: &str, target: &str, output_path: &Pat
         ("epub", "html") => batch_or_single(inputs, output_path, merge, epub_to_html),
         ("zip", "tar_gz") => batch_or_single(inputs, output_path, merge, zip_to_tar_gz),
         ("tar_gz", "zip") | ("tar", "zip") => batch_or_single(inputs, output_path, merge, tar_gz_to_zip),
+        ("tar", "tar_gz") => batch_or_single(inputs, output_path, merge, tar_to_tar_gz),
+        ("7z", "zip") => batch_or_single(inputs, output_path, merge, sevenz_to_zip),
+        ("7z", "tar_gz") => batch_or_single(inputs, output_path, merge, sevenz_to_tar_gz),
+
+        ("docx", "txt") => batch_or_single(inputs, output_path, merge, docx_to_txt),
+        ("docx", "md") => batch_or_single(inputs, output_path, merge, docx_to_md),
+        ("ods", "csv") => batch_or_single(inputs, output_path, merge, xlsx_to_csv),
+        ("ods", "json") => batch_or_single(inputs, output_path, merge, xlsx_to_json),
+        ("ods", "xlsx") => batch_or_single(inputs, output_path, merge, xls_to_xlsx),
+
+        ("txt", "png") => batch_or_single(inputs, output_path, merge, |i, o| txt_to_qr(i, o, "png")),
+        ("txt", "svg") => batch_or_single(inputs, output_path, merge, |i, o| txt_to_qr(i, o, "svg")),
+        ("csv", "png") => batch_or_single(inputs, output_path, merge, |i, o| csv_to_chart(i, o, "png")),
+        ("csv", "svg") => batch_or_single(inputs, output_path, merge, |i, o| csv_to_chart(i, o, "svg")),
 
         (s, t) if is_audio(s) && is_audio(t) => batch_or_single(inputs, output_path, merge, |i, o| external::ffmpeg_audio(i, o, t)),
         (s, t) if is_video(s) && (is_video(t) || is_audio(t)) => batch_or_single(inputs, output_path, merge, |i, o| external::ffmpeg_video(i, o, t)),
@@ -645,6 +659,198 @@ fn epub_to_html(input: &Path, output: &Path) -> Result<(), String> {
     )).map_err(|e| e.to_string())
 }
 
+fn tar_to_tar_gz(input: &Path, output: &Path) -> Result<(), String> {
+    let data = fs::read(input).map_err(|e| e.to_string())?;
+    let out_file = fs::File::create(output).map_err(|e| e.to_string())?;
+    let mut encoder = flate2::write::GzEncoder::new(out_file, flate2::Compression::default());
+    encoder.write_all(&data).map_err(|e| e.to_string())?;
+    encoder.finish().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn sevenz_to_zip(input: &Path, output: &Path) -> Result<(), String> {
+    let temp_dir = std::env::temp_dir().join(format!("rfilemaster_7z_{}", std::process::id()));
+    fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
+    sevenz_rust::decompress_file(input, &temp_dir).map_err(|e| e.to_string())?;
+    let result = dir_to_zip(&temp_dir, output);
+    let _ = fs::remove_dir_all(&temp_dir);
+    result
+}
+
+fn sevenz_to_tar_gz(input: &Path, output: &Path) -> Result<(), String> {
+    let temp_dir = std::env::temp_dir().join(format!("rfilemaster_7z_{}", std::process::id()));
+    fs::create_dir_all(&temp_dir).map_err(|e| e.to_string())?;
+    sevenz_rust::decompress_file(input, &temp_dir).map_err(|e| e.to_string())?;
+    let result = dir_to_tar_gz(&temp_dir, output);
+    let _ = fs::remove_dir_all(&temp_dir);
+    result
+}
+
+fn dir_to_zip(dir: &Path, output: &Path) -> Result<(), String> {
+    let out_file = fs::File::create(output).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipWriter::new(out_file);
+    let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        for entry in fs::read_dir(&current).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            let rel = path.strip_prefix(dir).map_err(|e| e.to_string())?.to_string_lossy().to_string();
+            if path.is_dir() {
+                stack.push(path);
+            } else {
+                let contents = fs::read(&path).map_err(|e| e.to_string())?;
+                zip.start_file(&rel, options).map_err(|e| e.to_string())?;
+                zip.write_all(&contents).map_err(|e| e.to_string())?;
+            }
+        }
+    }
+    zip.finish().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn dir_to_tar_gz(dir: &Path, output: &Path) -> Result<(), String> {
+    let out_file = fs::File::create(output).map_err(|e| e.to_string())?;
+    let gz = flate2::write::GzEncoder::new(out_file, flate2::Compression::default());
+    let mut tar = tar::Builder::new(gz);
+    tar.append_dir_all(".", dir).map_err(|e| e.to_string())?;
+    tar.finish().map_err(|e| e.to_string())
+}
+
+fn docx_extract_text(input: &Path) -> Result<String, String> {
+    let file = fs::File::open(input).map_err(|e| e.to_string())?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| e.to_string())?;
+    let mut xml = String::new();
+    zip.by_name("word/document.xml").map_err(|e| e.to_string())?.read_to_string(&mut xml).map_err(|e| e.to_string())?;
+    let mut reader = quick_xml::Reader::from_str(&xml);
+    reader.config_mut().trim_text(false);
+    let mut out = String::new();
+    let mut buf = Vec::new();
+    let mut in_text = false;
+    loop {
+        match reader.read_event_into(&mut buf) {
+            Ok(quick_xml::events::Event::Start(e)) => {
+                let local = e.local_name();
+                if local.as_ref() == b"t" { in_text = true; }
+            }
+            Ok(quick_xml::events::Event::End(e)) => {
+                let local = e.local_name();
+                if local.as_ref() == b"t" { in_text = false; }
+                if local.as_ref() == b"p" { out.push('\n'); }
+            }
+            Ok(quick_xml::events::Event::Text(e)) => {
+                if in_text {
+                    out.push_str(&e.unescape().map_err(|e| e.to_string())?);
+                }
+            }
+            Ok(quick_xml::events::Event::Eof) => break,
+            Err(e) => return Err(e.to_string()),
+            _ => {}
+        }
+        buf.clear();
+    }
+    Ok(out.trim().to_string())
+}
+
+fn docx_to_txt(input: &Path, output: &Path) -> Result<(), String> {
+    fs::write(output, docx_extract_text(input)?).map_err(|e| e.to_string())
+}
+
+fn docx_to_md(input: &Path, output: &Path) -> Result<(), String> {
+    let text = docx_extract_text(input)?;
+    let md: String = text.lines().map(|l| {
+        if l.trim().is_empty() { String::new() } else { format!("{}\n", l) }
+    }).collect();
+    fs::write(output, md).map_err(|e| e.to_string())
+}
+
+fn txt_to_qr(input: &Path, output: &Path, target_ext: &str) -> Result<(), String> {
+    let text = fs::read_to_string(input).map_err(|e| e.to_string())?;
+    let code = qrcode::QrCode::new(text.trim().as_bytes()).map_err(|e| e.to_string())?;
+    if target_ext == "svg" {
+        let svg_str = code.render::<qrcode::render::svg::Color>().min_dimensions(400, 400).build();
+        fs::write(output, svg_str).map_err(|e| e.to_string())
+    } else {
+        let img = code.render::<image::Luma<u8>>().min_dimensions(400, 400).build();
+        image::DynamicImage::ImageLuma8(img).save_with_format(output, ImageFormat::Png).map_err(|e| e.to_string())
+    }
+}
+
+fn csv_to_chart(input: &Path, output: &Path, target_ext: &str) -> Result<(), String> {
+    let mut rdr = csv::Reader::from_path(input).map_err(|e| e.to_string())?;
+    let headers = rdr.headers().map_err(|e| e.to_string())?.clone();
+    if headers.len() < 2 {
+        return Err("CSV needs at least two columns: a label column and a numeric column".to_string());
+    }
+    let mut labels: Vec<String> = Vec::new();
+    let mut values: Vec<f64> = Vec::new();
+    for result in rdr.records() {
+        let record = result.map_err(|e| e.to_string())?;
+        labels.push(record.get(0).unwrap_or("").to_string());
+        values.push(record.get(1).and_then(|v| v.parse::<f64>().ok()).unwrap_or(0.0));
+    }
+    if values.is_empty() {
+        return Err("No data rows found in CSV".to_string());
+    }
+    let max_val = values.iter().cloned().fold(0.0_f64, f64::max) * 1.15;
+    let title = format!("{} by {}", headers.get(1).unwrap_or("value"), headers.get(0).unwrap_or("label"));
+
+    if target_ext == "svg" {
+        render_bar_chart_svg(output, &labels, &values, max_val, &title)
+    } else {
+        render_bar_chart_png(output, &labels, &values, max_val, &title)
+    }
+}
+
+fn render_bar_chart_png(output: &Path, labels: &[String], values: &[f64], max_val: f64, title: &str) -> Result<(), String> {
+    use plotters::prelude::*;
+    let root = BitMapBackend::new(output, (900, 540)).into_drawing_area();
+    root.fill(&WHITE).map_err(|e| e.to_string())?;
+    let mut chart = ChartBuilder::on(&root)
+        .caption(title, ("sans-serif", 24))
+        .margin(20)
+        .x_label_area_size(40)
+        .y_label_area_size(50)
+        .build_cartesian_2d(0..labels.len(), 0.0..max_val)
+        .map_err(|e| e.to_string())?;
+    chart.configure_mesh()
+        .x_labels(labels.len())
+        .x_label_formatter(&|idx| labels.get(*idx).cloned().unwrap_or_default())
+        .draw()
+        .map_err(|e| e.to_string())?;
+    chart.draw_series(values.iter().enumerate().map(|(i, v)| {
+        let mut bar = Rectangle::new([(i, 0.0), (i + 1, *v)], BLUE.filled());
+        bar.set_margin(0, 0, 5, 5);
+        bar
+    })).map_err(|e| e.to_string())?;
+    root.present().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn render_bar_chart_svg(output: &Path, labels: &[String], values: &[f64], max_val: f64, title: &str) -> Result<(), String> {
+    use plotters::prelude::*;
+    let root = SVGBackend::new(output, (900, 540)).into_drawing_area();
+    root.fill(&WHITE).map_err(|e| e.to_string())?;
+    let mut chart = ChartBuilder::on(&root)
+        .caption(title, ("sans-serif", 24))
+        .margin(20)
+        .x_label_area_size(40)
+        .y_label_area_size(50)
+        .build_cartesian_2d(0..labels.len(), 0.0..max_val)
+        .map_err(|e| e.to_string())?;
+    chart.configure_mesh()
+        .x_labels(labels.len())
+        .x_label_formatter(&|idx| labels.get(*idx).cloned().unwrap_or_default())
+        .draw()
+        .map_err(|e| e.to_string())?;
+    chart.draw_series(values.iter().enumerate().map(|(i, v)| {
+        let mut bar = Rectangle::new([(i, 0.0), (i + 1, *v)], BLUE.filled());
+        bar.set_margin(0, 0, 5, 5);
+        bar
+    })).map_err(|e| e.to_string())?;
+    root.present().map_err(|e| e.to_string())?;
+    Ok(())
+}
 fn zip_to_tar_gz(input: &Path, output: &Path) -> Result<(), String> {
     let mut zip = zip::ZipArchive::new(fs::File::open(input).map_err(|e| e.to_string())?).map_err(|e| e.to_string())?;
     let gz = flate2::write::GzEncoder::new(fs::File::create(output).map_err(|e| e.to_string())?, flate2::Compression::default());
