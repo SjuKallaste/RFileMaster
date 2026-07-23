@@ -659,6 +659,11 @@ fn epub_to_html(input: &Path, output: &Path) -> Result<(), String> {
     )).map_err(|e| e.to_string())
 }
 
+pub fn download_youtube(url: &str, target: &str, output_dir: &Path) -> Result<PathBuf, String> {
+    let audio_only = is_audio(target);
+    external::yt_dlp_download(url, output_dir, audio_only, target)
+}
+
 fn tar_to_tar_gz(input: &Path, output: &Path) -> Result<(), String> {
     let data = fs::read(input).map_err(|e| e.to_string())?;
     let out_file = fs::File::create(output).map_err(|e| e.to_string())?;

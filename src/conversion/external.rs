@@ -1,10 +1,12 @@
-use std::path::Path;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 pub enum ExternalTool {
     Ffmpeg,
     Pandoc,
     LibreOffice,
+    YtDlp,
 }
 
 impl ExternalTool {
@@ -13,6 +15,7 @@ impl ExternalTool {
             ExternalTool::Ffmpeg => &["ffmpeg"],
             ExternalTool::Pandoc => &["pandoc"],
             ExternalTool::LibreOffice => &["libreoffice", "soffice", "libreoffice7.6", "libreoffice7.5"],
+            ExternalTool::YtDlp => &["yt-dlp", "youtube-dl"],
         };
         for name in names {
             if let Ok(path) = which::which(name) {
@@ -27,6 +30,7 @@ impl ExternalTool {
             ExternalTool::Ffmpeg => "ffmpeg",
             ExternalTool::Pandoc => "pandoc",
             ExternalTool::LibreOffice => "LibreOffice",
+            ExternalTool::YtDlp => "yt-dlp",
         }
     }
 }
@@ -102,9 +106,40 @@ pub fn ffmpeg_audio(input: &Path, output: &Path, target: &str) -> Result<(), Str
     ffmpeg(input, output, extra)
 }
 
+pub fn yt_dlp_download(url: &str, output_dir: &Path, want_audio_only: bool, target_ext: &str) -> Result<PathBuf, String> {
+    let bin = require(ExternalTool::YtDlp)?;
+    let out_template = output_dir.join("%(title)s.%(ext)s");
+    let mut cmd = Command::new(bin);
+    cmd.arg(url).arg("-o").arg(&out_template).arg("--no-playlist");
+
+    if want_audio_only {
+        cmd.arg("-x").arg("--audio-format").arg(target_ext);
+    } else {
+        cmd.arg("--merge-output-format").arg(target_ext);
+    }
+
+    let before: std::collections::HashSet<PathBuf> = fs::read_dir(output_dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .collect();
+
+    let status = cmd.status().map_err(|e| e.to_string())?;
+    if !status.success() {
+        return Err(format!("yt-dlp exited with status {}", status));
+    }
+
+    let after: std::collections::HashSet<PathBuf> = fs::read_dir(output_dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .collect();
+
+    after.difference(&before)
+        .find(|p| p.extension().and_then(|e| e.to_str()) == Some(target_ext))
+        .cloned()
+        .ok_or_else(|| "yt-dlp finished but the output file could not be located".to_string())
+}
 pub fn ffmpeg_video(input: &Path, output: &Path, target: &str) -> Result<(), String> {
     let extra: &[&str] = match target {
-        "mp4" => &["-c:v", "libx264", "-crf", "23", "-c:a", "aac"],
         "webm" => &["-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0", "-c:a", "libopus"],
         "mkv" => &["-c:v", "copy", "-c:a", "copy"],
         "avi" => &["-c:v", "mpeg4", "-c:a", "mp3"],

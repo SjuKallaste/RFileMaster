@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::{channel, Receiver, Sender};
-use crate::conversion::job::{ConversionJob, JobStatus};
+use crate::conversion::job::{ConversionJob, JobStatus, JobSource};
 use crate::conversion::engine;
 
 enum JobUpdate {
@@ -30,8 +30,13 @@ impl ConversionRunner {
     pub fn enqueue(&mut self, inputs: Vec<PathBuf>, source: String, target: String, output_path: PathBuf, merge: bool) {
         let job = ConversionJob::new(self.next_id, inputs, source, target, output_path, merge);
         self.next_id += 1;
-        let mut jobs = self.jobs.lock().unwrap();
-        jobs.push(job);
+        self.jobs.lock().unwrap().push(job);
+    }
+
+    pub fn enqueue_url(&mut self, url: String, target: String, output_dir: PathBuf) {
+        let job = ConversionJob::from_url(self.next_id, url, target, output_dir);
+        self.next_id += 1;
+        self.jobs.lock().unwrap().push(job);
     }
 
     pub fn tick(&mut self) {
@@ -53,28 +58,37 @@ impl ConversionRunner {
 
         let queued_ids: Vec<u64> = {
             let jobs = self.jobs.lock().unwrap();
-            jobs.iter()
-                .filter(|j| j.status == JobStatus::Queued)
-                .map(|j| j.id)
-                .collect()
+            jobs.iter().filter(|j| j.status == JobStatus::Queued).map(|j| j.id).collect()
         };
 
         for id in queued_ids {
-            let (inputs, source, target, output_path, merge) = {
+            let job_data = {
                 let mut jobs = self.jobs.lock().unwrap();
                 if let Some(job) = jobs.iter_mut().find(|j| j.id == id) {
                     job.status = JobStatus::Running(0.0);
-                    (job.input_paths.clone(), job.source_format.clone(), job.target_format.clone(), job.output_path.clone(), job.merge)
+                    Some((job.source.clone(), job.source_format.clone(), job.target_format.clone(), job.output_path.clone(), job.merge))
                 } else {
-                    continue;
+                    None
                 }
             };
 
+            let Some((source, src_fmt, target, output_path, merge)) = job_data else { continue };
             let tx = self.tx.clone();
+
             std::thread::spawn(move || {
-                match engine::convert(&inputs, &source, &target, &output_path, merge) {
-                    Ok(()) => { let _ = tx.send(JobUpdate::Done(id, output_path)); }
-                    Err(e) => { let _ = tx.send(JobUpdate::Failed(id, e)); }
+                match source {
+                    JobSource::Files(inputs) => {
+                        match engine::convert(&inputs, &src_fmt, &target, &output_path, merge) {
+                            Ok(()) => { let _ = tx.send(JobUpdate::Done(id, output_path)); }
+                            Err(e) => { let _ = tx.send(JobUpdate::Failed(id, e)); }
+                        }
+                    }
+                    JobSource::Url(url) => {
+                        match engine::download_youtube(&url, &target, &output_path) {
+                            Ok(final_path) => { let _ = tx.send(JobUpdate::Done(id, final_path)); }
+                            Err(e) => { let _ = tx.send(JobUpdate::Failed(id, e)); }
+                        }
+                    }
                 }
             });
         }

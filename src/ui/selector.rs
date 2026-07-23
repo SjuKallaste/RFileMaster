@@ -10,6 +10,8 @@ pub struct SelectorState {
     pub input_paths: Vec<std::path::PathBuf>,
     pub output_dir: Option<std::path::PathBuf>,
     pub merge: bool,
+    pub use_youtube: bool,
+    pub youtube_url: String,
 }
 
 impl SelectorState {
@@ -21,6 +23,8 @@ impl SelectorState {
             input_paths: Vec::new(),
             output_dir: None,
             merge: false,
+            use_youtube: false,
+            youtube_url: String::new(),
         }
     }
 
@@ -29,6 +33,8 @@ impl SelectorState {
         self.target_format = None;
         self.input_paths.clear();
         self.merge = false;
+        self.use_youtube = false;
+        self.youtube_url.clear();
     }
 
     pub fn supports_merge(&self) -> bool {
@@ -38,8 +44,16 @@ impl SelectorState {
         }
     }
 
+    pub fn allows_youtube(&self) -> bool {
+        matches!(self.active_category, Some(FormatCategory::Audio) | Some(FormatCategory::Video))
+    }
+
     pub fn is_ready(&self) -> bool {
-        self.source_format.is_some() && self.target_format.is_some() && !self.input_paths.is_empty()
+        if self.use_youtube {
+            self.target_format.is_some() && !self.youtube_url.trim().is_empty()
+        } else {
+            self.source_format.is_some() && self.target_format.is_some() && !self.input_paths.is_empty()
+        }
     }
 
     pub fn detect_format_from_paths(&mut self, registry: &FormatRegistry) {
@@ -153,27 +167,29 @@ impl SelectorPanel {
                 ui.set_width(col_w);
                 ui.label(RichText::new("From").font(theme::label_font()).color(p.text_primary));
                 ui.add_space(6.0);
-                ComboBox::from_id_source("source_fmt")
-                    .selected_text(
-                        state.source_format.as_deref()
-                            .and_then(|id| registry.find(id))
-                            .map(|f| f.display())
-                            .unwrap_or_else(|| "Select source format".to_string()),
-                    )
-                    .width(col_w)
-                    .show_ui(ui, |ui| {
-                        ui.style_mut().visuals.widgets.noninteractive.bg_fill = p.surface_high;
-                        for fmt in &formats {
-                            let selected = state.source_format.as_deref() == Some(fmt.id);
-                            if ui.selectable_label(selected, fmt.display()).clicked() {
-                                if state.source_format.as_deref() != Some(fmt.id) {
-                                    state.target_format = None;
-                                    state.input_paths.clear();
+                ui.add_enabled_ui(!state.use_youtube, |ui| {
+                    ComboBox::from_id_source("source_fmt")
+                        .selected_text(
+                            state.source_format.as_deref()
+                                .and_then(|id| registry.find(id))
+                                .map(|f| f.display())
+                                .unwrap_or_else(|| if state.use_youtube { "YouTube (detected automatically)".to_string() } else { "Select source format".to_string() }),
+                        )
+                        .width(col_w)
+                        .show_ui(ui, |ui| {
+                            ui.style_mut().visuals.widgets.noninteractive.bg_fill = p.surface_high;
+                            for fmt in &formats {
+                                let selected = state.source_format.as_deref() == Some(fmt.id);
+                                if ui.selectable_label(selected, fmt.display()).clicked() {
+                                    if state.source_format.as_deref() != Some(fmt.id) {
+                                        state.target_format = None;
+                                        state.input_paths.clear();
+                                    }
+                                    state.source_format = Some(fmt.id.to_string());
                                 }
-                                state.source_format = Some(fmt.id.to_string());
                             }
-                        }
-                    });
+                        });
+                });
             });
 
             ui.add_space(gap);
@@ -183,13 +199,19 @@ impl SelectorPanel {
                 ui.label(RichText::new("To").font(theme::label_font()).color(p.text_primary));
                 ui.add_space(6.0);
 
-                let targets: Vec<&FileFormat> = if let Some(src) = &state.source_format {
+                let targets: Vec<&FileFormat> = if state.use_youtube {
+                    if let Some(cat) = &state.active_category {
+                        registry.formats_in_category(cat)
+                    } else {
+                        vec![]
+                    }
+                } else if let Some(src) = &state.source_format {
                     registry.targets_for(src)
                 } else {
                     vec![]
                 };
 
-                let placeholder = if state.source_format.is_none() {
+                let placeholder = if !state.use_youtube && state.source_format.is_none() {
                     "Select source first".to_string()
                 } else if targets.is_empty() {
                     "No targets available".to_string()
@@ -217,15 +239,19 @@ impl SelectorPanel {
             });
         });
 
-        if let (Some(src_id), Some(tgt_id)) = (&state.source_format, &state.target_format) {
+        if let (Some(tgt_id), true) = (&state.target_format, state.use_youtube) {
+            ui.add_space(8.0);
+            let tgt_label = registry.find(tgt_id).map(|f| f.label).unwrap_or(tgt_id.as_str());
+            ui.label(
+                RichText::new(format!("YouTube -> {}", tgt_label))
+                    .font(theme::small_font())
+                    .color(p.success),
+            );
+        } else if let (Some(src_id), Some(tgt_id)) = (&state.source_format, &state.target_format) {
             ui.add_space(8.0);
             let src_label = registry.find(src_id).map(|f| f.label).unwrap_or(src_id.as_str());
             let tgt_label = registry.find(tgt_id).map(|f| f.label).unwrap_or(tgt_id.as_str());
-            let suffix = if state.supports_merge() {
-                "  -  multiple files supported"
-            } else {
-                ""
-            };
+            let suffix = if state.supports_merge() { "  -  multiple files supported" } else { "" };
             ui.label(
                 RichText::new(format!("{} -> {}{}", src_label, tgt_label, suffix))
                     .font(theme::small_font())
@@ -241,20 +267,38 @@ impl SelectorPanel {
         ui.horizontal(|ui| {
             ui.vertical(|ui| {
                 ui.set_width(col_w);
-                let multi = state.input_paths.len() > 1 || state.supports_merge();
-                let label = if multi { "Input Files" } else { "Input File" };
-                ui.label(RichText::new(label).font(theme::label_font()).color(p.text_primary));
-                ui.add_space(6.0);
-                Self::drop_zone(ui, state, col_w, registry);
-                if state.supports_merge() && state.input_paths.len() > 1 {
-                    ui.add_space(6.0);
+
+                if state.allows_youtube() {
                     ui.horizontal(|ui| {
-                        ui.checkbox(&mut state.merge,
-                                    RichText::new("Merge into one file")
+                        ui.checkbox(&mut state.use_youtube,
+                                    RichText::new("Download from YouTube URL instead")
                                         .font(theme::small_font())
                                         .color(p.text_secondary),
                         );
                     });
+                    ui.add_space(6.0);
+                }
+
+                if state.use_youtube {
+                    ui.label(RichText::new("YouTube URL").font(theme::label_font()).color(p.text_primary));
+                    ui.add_space(6.0);
+                    Self::youtube_url_field(ui, state, col_w);
+                } else {
+                    let multi = state.input_paths.len() > 1 || state.supports_merge();
+                    let label = if multi { "Input Files" } else { "Input File" };
+                    ui.label(RichText::new(label).font(theme::label_font()).color(p.text_primary));
+                    ui.add_space(6.0);
+                    Self::drop_zone(ui, state, col_w, registry);
+                    if state.supports_merge() && state.input_paths.len() > 1 {
+                        ui.add_space(6.0);
+                        ui.horizontal(|ui| {
+                            ui.checkbox(&mut state.merge,
+                                        RichText::new("Merge into one file")
+                                            .font(theme::small_font())
+                                            .color(p.text_secondary),
+                            );
+                        });
+                    }
                 }
             });
 
@@ -267,6 +311,27 @@ impl SelectorPanel {
                 Self::output_dir_picker(ui, state, col_w);
             });
         });
+    }
+
+    fn youtube_url_field(ui: &mut Ui, state: &mut SelectorState, width: f32) {
+        let p = theme::p();
+        let height = 110.0;
+        egui::Frame::none()
+            .fill(p.surface_raised)
+            .stroke(Stroke::new(1.0, p.base))
+            .rounding(theme::ROUNDING_SM)
+            .inner_margin(egui::Margin::same(12.0))
+            .show(ui, |ui| {
+                ui.set_width(width - 24.0);
+                ui.set_height(height - 24.0);
+                ui.vertical_centered_justified(|ui| {
+                    ui.add_space(height / 2.0 - 30.0);
+                    let edit = egui::TextEdit::singleline(&mut state.youtube_url)
+                        .hint_text("https://www.youtube.com/watch?v=...")
+                        .font(theme::label_font());
+                    ui.add(edit);
+                });
+            });
     }
 
     fn drop_zone(ui: &mut Ui, state: &mut SelectorState, width: f32, registry: &FormatRegistry) {
