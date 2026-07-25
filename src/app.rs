@@ -2,24 +2,29 @@ use eframe::CreationContext;
 use egui::{CentralPanel, Frame, Margin, TopBottomPanel};
 use crate::conversion::formats::{init_registry, FormatRegistry, REGISTRY};
 use crate::conversion::runner::ConversionRunner;
+use crate::conversion::job::JobStatus;
 use crate::theme;
 use crate::ui::header::{HeaderBar, Tab};
 use crate::ui::queue::QueuePanel;
 use crate::ui::selector::{SelectorPanel, SelectorState};
 use crate::ui::settings::{AppSettings, SettingsPanel};
 use crate::ui::widgets;
+use crate::history::{self, JobRecord};
 
 pub struct TransmogrifyApp {
     active_tab: Tab,
     selector: SelectorState,
     runner: ConversionRunner,
     settings: AppSettings,
+    last_saved_settings: AppSettings,
     registry: &'static FormatRegistry,
+    history: Vec<JobRecord>,
+    seen_terminal_ids: std::collections::HashSet<u64>,
 }
 
 impl TransmogrifyApp {
     pub fn new(cc: &CreationContext<'_>) -> Self {
-        let settings = AppSettings::default();
+        let settings = AppSettings::load_or_default();
         theme::set(&settings.theme);
         theme::apply(&cc.egui_ctx, &settings.theme);
         let registry = REGISTRY.get_or_init(init_registry);
@@ -27,8 +32,11 @@ impl TransmogrifyApp {
             active_tab: Tab::Convert,
             selector: SelectorState::new(),
             runner: ConversionRunner::new(),
+            last_saved_settings: settings.clone(),
             settings,
             registry,
+            history: history::load(),
+            seen_terminal_ids: std::collections::HashSet::new(),
         }
     }
 }
@@ -37,12 +45,29 @@ impl eframe::App for TransmogrifyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.runner.tick();
 
+        if self.settings != self.last_saved_settings {
+            self.settings.save();
+            self.last_saved_settings = self.settings.clone();
+        }
+
+        {
+            let jobs = self.runner.jobs.lock().unwrap();
+            for job in jobs.iter() {
+                if job.status.is_terminal() && !self.seen_terminal_ids.contains(&job.id) {
+                    self.seen_terminal_ids.insert(job.id);
+                    if let Some(record) = JobRecord::from_job(job) {
+                        history::push(&mut self.history, record);
+                    }
+                }
+            }
+        }
+
         theme::set(&self.settings.theme);
         theme::apply(ctx, &self.settings.theme);
 
         let p = theme::p();
         let job_count = self.runner.jobs.lock().unwrap().len();
-        let has_running = self.runner.jobs.lock().unwrap().iter().any(|j| matches!(j.status, crate::conversion::job::JobStatus::Queued | crate::conversion::job::JobStatus::Running(_)));
+        let has_running = self.runner.jobs.lock().unwrap().iter().any(|j| matches!(j.status, JobStatus::Queued | JobStatus::Running(_)));
 
         if has_running {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -126,7 +151,7 @@ impl eframe::App for TransmogrifyApp {
                         SelectorPanel::show(ui, &mut self.selector, self.registry);
                     }
                     Tab::Queue => {
-                        QueuePanel::show(ui, &self.runner);
+                        QueuePanel::show(ui, &self.runner, &mut self.history);
                     }
                     Tab::Settings => {
                         SettingsPanel::show(ui, &mut self.settings);

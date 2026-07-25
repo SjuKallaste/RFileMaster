@@ -38,6 +38,7 @@ qrcode = "0.14"
 plotters = "0.3"
 kamadak-exif = "0.6"
 sevenz-rust = "0.6"
+dirs = "5"
 
 [build-dependencies]
 winres = "0.1"

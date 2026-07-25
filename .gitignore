@@ -1,3 +1,4 @@
+/dist
 /target
 Cargo.lock
 *.pdb
@@ -9,3 +10,4 @@ Cargo.lock
 .env
 .DS_Store
 Thumbs.db
+installer.iss

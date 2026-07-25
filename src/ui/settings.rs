@@ -1,4 +1,4 @@
-use egui::{ComboBox, Frame, Margin, RichText, Stroke, Ui, Vec2};
+use egui::{ComboBox, RichText, Ui, Vec2};
 use crate::theme;
 use crate::ui::widgets;
 use serde::{Deserialize, Serialize};
@@ -23,7 +23,7 @@ impl Theme {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppSettings {
     pub auto_open_output: bool,
     pub overwrite_existing: bool,
@@ -41,6 +41,16 @@ impl Default for AppSettings {
             max_concurrent_jobs: (std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4) / 2).max(1),
             theme: detect_system_theme(),
         }
+    }
+}
+
+impl AppSettings {
+    pub fn load_or_default() -> Self {
+        crate::persistence::load_json("settings.json").unwrap_or_default()
+    }
+
+    pub fn save(&self) {
+        let _ = crate::persistence::save_json("settings.json", self);
     }
 }
 
@@ -70,102 +80,93 @@ impl SettingsPanel {
                         .font(theme::heading_font())
                         .color(theme::p().text_primary),
                 );
-                ui.add_space(16.0);
+                ui.add_space(20.0);
 
-                Frame::none()
-                    .fill(theme::p().surface)
-                    .rounding(theme::ROUNDING_MD)
-                    .stroke(Stroke::new(1.0, theme::p().base_dark))
-                    .inner_margin(Margin::same(20.0))
-                    .show(ui, |ui| {
-                        ui.set_width(panel_w - 2.0);
+                widgets::section_label(ui, "Appearance");
+                ui.add_space(6.0);
 
-                        widgets::section_label(ui, "Appearance");
-                        ui.add_space(6.0);
-
-                        ui.horizontal(|ui| {
-                            ui.label(RichText::new("Theme").font(theme::label_font()).color(theme::p().text_secondary));
-                            ui.add_space(8.0);
-                            ComboBox::from_id_source("theme_select")
-                                .selected_text(settings.theme.label())
-                                .width(160.0)
-                                .show_ui(ui, |ui| {
-                                    for t in Theme::all() {
-                                        let selected = settings.theme == t;
-                                        if ui.selectable_label(selected, t.label()).clicked() {
-                                            settings.theme = t;
-                                        }
-                                    }
-                                });
-                        });
-
-                        widgets::divider(ui);
-                        widgets::section_label(ui, "Output behaviour");
-                        ui.add_space(4.0);
-
-                        ui.checkbox(
-                            &mut settings.auto_open_output,
-                            RichText::new("Open output folder when conversion finishes")
-                                .font(theme::label_font())
-                                .color(theme::p().text_primary),
-                        );
-                        ui.add_space(4.0);
-                        ui.checkbox(
-                            &mut settings.overwrite_existing,
-                            RichText::new("Overwrite existing files without prompting")
-                                .font(theme::label_font())
-                                .color(theme::p().text_primary),
-                        );
-
-                        widgets::divider(ui);
-                        widgets::section_label(ui, "Default output directory");
-                        ui.add_space(4.0);
-
-                        ui.horizontal(|ui| {
-                            let dir_label = settings.default_output_dir
-                                .as_ref()
-                                .map(|p| p.to_string_lossy().to_string())
-                                .unwrap_or_else(|| "Same directory as input file".to_string());
-
-                            ui.label(
-                                RichText::new(dir_label)
-                                    .font(theme::label_font())
-                                    .color(if settings.default_output_dir.is_some() {
-                                        theme::p().text_primary
-                                    } else {
-                                        theme::p().text_muted
-                                    }),
-                            );
-                            ui.add_space(8.0);
-                            if widgets::ghost_button(ui, "Change").clicked() {
-                                if let Some(dir) = rfd::FileDialog::new().pick_folder() {
-                                    settings.default_output_dir = Some(dir);
-                                }
-                            }
-                            if settings.default_output_dir.is_some() {
-                                if widgets::ghost_button(ui, "Clear").clicked() {
-                                    settings.default_output_dir = None;
+                ui.horizontal(|ui| {
+                    ui.label(RichText::new("Theme").font(theme::label_font()).color(theme::p().text_secondary));
+                    ui.add_space(8.0);
+                    ComboBox::from_id_source("theme_select")
+                        .selected_text(settings.theme.label())
+                        .width(160.0)
+                        .show_ui(ui, |ui| {
+                            for t in Theme::all() {
+                                let selected = settings.theme == t;
+                                if ui.selectable_label(selected, t.label()).clicked() {
+                                    settings.theme = t;
                                 }
                             }
                         });
+                });
 
-                        widgets::divider(ui);
-                        widgets::section_label(ui, "Concurrency");
-                        ui.add_space(4.0);
+                ui.add_space(20.0);
+                widgets::section_label(ui, "Output behaviour");
+                ui.add_space(6.0);
 
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                RichText::new("Max simultaneous conversions:")
-                                    .font(theme::label_font())
-                                    .color(theme::p().text_secondary),
-                            );
-                            ui.add_space(8.0);
-                            let mut val = settings.max_concurrent_jobs as u32;
-                            if ui.add(egui::DragValue::new(&mut val).clamp_range(1u32..=8u32)).changed() {
-                                settings.max_concurrent_jobs = val as usize;
-                            }
-                        });
-                    });
+                ui.checkbox(
+                    &mut settings.auto_open_output,
+                    RichText::new("Open output folder when conversion finishes")
+                        .font(theme::label_font())
+                        .color(theme::p().text_primary),
+                );
+                ui.add_space(4.0);
+                ui.checkbox(
+                    &mut settings.overwrite_existing,
+                    RichText::new("Overwrite existing files without prompting")
+                        .font(theme::label_font())
+                        .color(theme::p().text_primary),
+                );
+
+                ui.add_space(20.0);
+                widgets::section_label(ui, "Default output directory");
+                ui.add_space(6.0);
+
+                ui.horizontal(|ui| {
+                    let dir_label = settings.default_output_dir
+                        .as_ref()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_else(|| "Same directory as input file".to_string());
+
+                    ui.label(
+                        RichText::new(dir_label)
+                            .font(theme::label_font())
+                            .color(if settings.default_output_dir.is_some() {
+                                theme::p().text_primary
+                            } else {
+                                theme::p().text_muted
+                            }),
+                    );
+                    ui.add_space(8.0);
+                    if widgets::ghost_button(ui, "Change").clicked() {
+                        if let Some(dir) = rfd::FileDialog::new().pick_folder() {
+                            settings.default_output_dir = Some(dir);
+                        }
+                    }
+                    if settings.default_output_dir.is_some() {
+                        if widgets::ghost_button(ui, "Clear").clicked() {
+                            settings.default_output_dir = None;
+                        }
+                    }
+                });
+
+                ui.add_space(20.0);
+                widgets::section_label(ui, "Concurrency");
+                ui.add_space(6.0);
+
+                ui.horizontal(|ui| {
+                    ui.label(
+                        RichText::new("Max simultaneous conversions:")
+                            .font(theme::label_font())
+                            .color(theme::p().text_secondary),
+                    );
+                    ui.add_space(8.0);
+                    let mut val = settings.max_concurrent_jobs as u32;
+                    if ui.add(egui::DragValue::new(&mut val).clamp_range(1u32..=8u32)).changed() {
+                        settings.max_concurrent_jobs = val as usize;
+                    }
+                });
             },
         );
     }

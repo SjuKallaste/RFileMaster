@@ -1,9 +1,11 @@
-#![cfg_attr(all(target_os = "windows", not(debug_assertions)), windows_subsystem = "windows")]
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
 mod theme;
 mod ui;
 mod conversion;
+mod persistence;
+mod history;
 
 use eframe::NativeOptions;
 use egui::ViewportBuilder;

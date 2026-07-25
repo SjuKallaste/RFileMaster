@@ -628,9 +628,9 @@ fn rtf_to_txt(input: &Path, output: &Path) -> Result<(), String> {
 fn epub_to_txt(input: &Path, output: &Path) -> Result<(), String> {
     let mut doc = epub::doc::EpubDoc::new(input).map_err(|e| e.to_string())?;
     let mut all_text = String::new();
-    let num = doc.get_num_pages();
+    let num = doc.get_num_chapters();
     for i in 0..num {
-        doc.set_current_page(i);
+        doc.set_current_chapter(i);
         if let Some((content, _)) = doc.get_current_str() {
             let plain = strip_html(&content);
             if !plain.trim().is_empty() {
@@ -645,9 +645,9 @@ fn epub_to_txt(input: &Path, output: &Path) -> Result<(), String> {
 fn epub_to_html(input: &Path, output: &Path) -> Result<(), String> {
     let mut doc = epub::doc::EpubDoc::new(input).map_err(|e| e.to_string())?;
     let mut body = String::new();
-    let num = doc.get_num_pages();
+    let num = doc.get_num_chapters();
     for i in 0..num {
-        doc.set_current_page(i);
+        doc.set_current_chapter(i);
         if let Some((content, _)) = doc.get_current_str() {
             body.push_str(&content);
             body.push('\n');

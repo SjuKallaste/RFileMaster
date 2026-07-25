@@ -22,6 +22,21 @@ impl ExternalTool {
                 return Some(path);
             }
         }
+        Self::find_bundled(names)
+    }
+
+    fn find_bundled(names: &[&str]) -> Option<std::path::PathBuf> {
+        let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+        let candidates = [exe_dir.clone(), exe_dir.join("tools")];
+        for dir in candidates {
+            for name in names {
+                let with_ext = if cfg!(windows) { format!("{}.exe", name) } else { name.to_string() };
+                let path = dir.join(&with_ext);
+                if path.exists() {
+                    return Some(path);
+                }
+            }
+        }
         None
     }
 
