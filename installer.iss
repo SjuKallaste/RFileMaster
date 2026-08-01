@@ -26,6 +26,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Additional shortcuts:"
 Name: "getytdlp"; Description: "yt-dlp (enables downloading video and audio from YouTube)"; GroupDescription: "Install automatically (recommended):"
+Name: "getdeno"; Description: "deno (needed by yt-dlp for reliable YouTube downloads)"; GroupDescription: "Install automatically (recommended):"
 Name: "getffmpeg"; Description: "ffmpeg (enables audio and video conversion)"; GroupDescription: "Install automatically (recommended):"
 Name: "getlibreoffice"; Description: "LibreOffice (enables Word, PowerPoint, and PDF conversion)"; GroupDescription: "Install automatically (recommended):"
 
@@ -101,12 +102,14 @@ begin
     DownloadPage.Clear;
     if WizardIsTaskSelected('getytdlp') then
       DownloadPage.Add('https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp.exe', 'yt-dlp.exe', '');
+    if WizardIsTaskSelected('getdeno') then
+      DownloadPage.Add('https://github.com/denoland/deno/releases/latest/download/deno-x86_64-pc-windows-msvc.zip', 'deno.zip', '');
     if WizardIsTaskSelected('getffmpeg') then
       DownloadPage.Add('https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip', 'ffmpeg.zip', '');
     if WizardIsTaskSelected('getlibreoffice') then
       DownloadPage.Add('https://download.documentfoundation.org/libreoffice/stable/{#LibreOfficeVersion}/win/x86_64/LibreOffice_{#LibreOfficeVersion}_Win_x86-64.msi', 'libreoffice.msi', '');
 
-    if (WizardIsTaskSelected('getytdlp')) or (WizardIsTaskSelected('getffmpeg')) or (WizardIsTaskSelected('getlibreoffice')) then
+    if (WizardIsTaskSelected('getytdlp')) or (WizardIsTaskSelected('getdeno')) or (WizardIsTaskSelected('getffmpeg')) or (WizardIsTaskSelected('getlibreoffice')) then
     begin
       DownloadPage.Show;
       try
@@ -139,6 +142,18 @@ begin
       begin
         StatusPage.SetText('Installing yt-dlp...', '');
         FileCopy(ExpandConstant('{tmp}\yt-dlp.exe'), ToolsDir + '\yt-dlp.exe', False);
+      end;
+
+      if WizardIsTaskSelected('getdeno') and FileExists(ExpandConstant('{tmp}\deno.zip')) then
+      begin
+        StatusPage.SetText('Installing deno...', 'Extracting archive');
+        ExtractDir := ExpandConstant('{tmp}\deno_extracted');
+        ForceDirectories(ExtractDir);
+        PowerShellCmd := '-NoProfile -ExecutionPolicy Bypass -Command "Expand-Archive -LiteralPath ''' + ExpandConstant('{tmp}\deno.zip') + ''' -DestinationPath ''' + ExtractDir + ''' -Force"';
+        Exec('powershell.exe', PowerShellCmd, '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+        FoundExe := FindFileRecursive(ExtractDir, 'deno.exe');
+        if FoundExe <> '' then
+          FileCopy(FoundExe, ToolsDir + '\deno.exe', False);
       end;
 
       if WizardIsTaskSelected('getffmpeg') and FileExists(ExpandConstant('{tmp}\ffmpeg.zip')) then

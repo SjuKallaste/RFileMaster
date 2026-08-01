@@ -10,7 +10,7 @@ pub enum ExternalTool {
 }
 
 impl ExternalTool {
-    pub fn find(&self) -> Option<std::path::PathBuf> {
+    pub fn find(&self) -> Option<PathBuf> {
         let names: &[&str] = match self {
             ExternalTool::Ffmpeg => &["ffmpeg"],
             ExternalTool::Pandoc => &["pandoc"],
@@ -25,10 +25,8 @@ impl ExternalTool {
         Self::find_bundled(names)
     }
 
-    fn find_bundled(names: &[&str]) -> Option<std::path::PathBuf> {
-        let exe_dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
-        let candidates = [exe_dir.clone(), exe_dir.join("tools")];
-        for dir in candidates {
+    fn find_bundled(names: &[&str]) -> Option<PathBuf> {
+        for dir in bundled_search_dirs() {
             for name in names {
                 let with_ext = if cfg!(windows) { format!("{}.exe", name) } else { name.to_string() };
                 let path = dir.join(&with_ext);
@@ -50,7 +48,28 @@ impl ExternalTool {
     }
 }
 
-pub fn require(tool: ExternalTool) -> Result<std::path::PathBuf, String> {
+fn bundled_search_dirs() -> Vec<PathBuf> {
+    match std::env::current_exe().ok().and_then(|p| p.parent().map(|p| p.to_path_buf())) {
+        Some(exe_dir) => vec![exe_dir.clone(), exe_dir.join("tools")],
+        None => vec![],
+    }
+}
+
+fn augmented_path() -> std::ffi::OsString {
+    let existing = std::env::var_os("PATH").unwrap_or_default();
+    let extra: Vec<PathBuf> = bundled_search_dirs();
+    let mut parts: Vec<PathBuf> = extra;
+    parts.extend(std::env::split_paths(&existing));
+    std::env::join_paths(parts).unwrap_or(existing)
+}
+
+fn command_with_bundled_path(bin: &Path) -> Command {
+    let mut cmd = Command::new(bin);
+    cmd.env("PATH", augmented_path());
+    cmd
+}
+
+pub fn require(tool: ExternalTool) -> Result<PathBuf, String> {
     tool.find().ok_or_else(|| format!(
         "{} is not installed or not on PATH. Install it to use this conversion.",
         tool.name()
@@ -59,7 +78,7 @@ pub fn require(tool: ExternalTool) -> Result<std::path::PathBuf, String> {
 
 pub fn ffmpeg(input: &Path, output: &Path, extra_args: &[&str]) -> Result<(), String> {
     let bin = require(ExternalTool::Ffmpeg)?;
-    let status = Command::new(bin)
+    let status = command_with_bundled_path(&bin)
         .arg("-y")
         .arg("-i")
         .arg(input)
@@ -76,7 +95,7 @@ pub fn ffmpeg(input: &Path, output: &Path, extra_args: &[&str]) -> Result<(), St
 
 pub fn pandoc(input: &Path, output: &Path, extra_args: &[&str]) -> Result<(), String> {
     let bin = require(ExternalTool::Pandoc)?;
-    let status = Command::new(bin)
+    let status = command_with_bundled_path(&bin)
         .arg(input)
         .arg("-o")
         .arg(output)
@@ -92,7 +111,7 @@ pub fn pandoc(input: &Path, output: &Path, extra_args: &[&str]) -> Result<(), St
 
 pub fn libreoffice_convert(input: &Path, target_ext: &str, output_dir: &Path) -> Result<(), String> {
     let bin = require(ExternalTool::LibreOffice)?;
-    let status = Command::new(bin)
+    let status = command_with_bundled_path(&bin)
         .arg("--headless")
         .arg("--convert-to")
         .arg(target_ext)
@@ -121,10 +140,25 @@ pub fn ffmpeg_audio(input: &Path, output: &Path, target: &str) -> Result<(), Str
     ffmpeg(input, output, extra)
 }
 
+pub fn ffmpeg_video(input: &Path, output: &Path, target: &str) -> Result<(), String> {
+    let extra: &[&str] = match target {
+        "mp4" => &["-c:v", "libx264", "-crf", "23", "-c:a", "aac"],
+        "webm" => &["-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0", "-c:a", "libopus"],
+        "mkv" => &["-c:v", "copy", "-c:a", "copy"],
+        "avi" => &["-c:v", "mpeg4", "-c:a", "mp3"],
+        "mov" => &["-c:v", "libx264", "-c:a", "aac"],
+        "gif" => &["-vf", "fps=15,scale=640:-1:flags=lanczos"],
+        "mp3" => &["-vn", "-q:a", "2"],
+        "wav" => &["-vn", "-c:a", "pcm_s16le"],
+        _ => &[],
+    };
+    ffmpeg(input, output, extra)
+}
+
 pub fn yt_dlp_download(url: &str, output_dir: &Path, want_audio_only: bool, target_ext: &str) -> Result<PathBuf, String> {
     let bin = require(ExternalTool::YtDlp)?;
     let out_template = output_dir.join("%(title)s.%(ext)s");
-    let mut cmd = Command::new(bin);
+    let mut cmd = command_with_bundled_path(&bin);
     cmd.arg(url).arg("-o").arg(&out_template).arg("--no-playlist");
 
     if want_audio_only {
@@ -152,17 +186,4 @@ pub fn yt_dlp_download(url: &str, output_dir: &Path, want_audio_only: bool, targ
         .find(|p| p.extension().and_then(|e| e.to_str()) == Some(target_ext))
         .cloned()
         .ok_or_else(|| "yt-dlp finished but the output file could not be located".to_string())
-}
-pub fn ffmpeg_video(input: &Path, output: &Path, target: &str) -> Result<(), String> {
-    let extra: &[&str] = match target {
-        "webm" => &["-c:v", "libvpx-vp9", "-crf", "30", "-b:v", "0", "-c:a", "libopus"],
-        "mkv" => &["-c:v", "copy", "-c:a", "copy"],
-        "avi" => &["-c:v", "mpeg4", "-c:a", "mp3"],
-        "mov" => &["-c:v", "libx264", "-c:a", "aac"],
-        "gif" => &["-vf", "fps=15,scale=640:-1:flags=lanczos"],
-        "mp3" => &["-vn", "-q:a", "2"],
-        "wav" => &["-vn", "-c:a", "pcm_s16le"],
-        _ => &[],
-    };
-    ffmpeg(input, output, extra)
 }
