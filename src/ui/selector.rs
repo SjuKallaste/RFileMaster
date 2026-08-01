@@ -239,21 +239,10 @@ impl SelectorPanel {
             });
         });
 
-        if let (Some(tgt_id), true) = (&state.target_format, state.use_youtube) {
+        if state.supports_merge() && state.target_format.is_some() {
             ui.add_space(8.0);
-            let tgt_label = registry.find(tgt_id).map(|f| f.label).unwrap_or(tgt_id.as_str());
             ui.label(
-                RichText::new(format!("YouTube -> {}", tgt_label))
-                    .font(theme::small_font())
-                    .color(p.success),
-            );
-        } else if let (Some(src_id), Some(tgt_id)) = (&state.source_format, &state.target_format) {
-            ui.add_space(8.0);
-            let src_label = registry.find(src_id).map(|f| f.label).unwrap_or(src_id.as_str());
-            let tgt_label = registry.find(tgt_id).map(|f| f.label).unwrap_or(tgt_id.as_str());
-            let suffix = if state.supports_merge() { "  -  multiple files supported" } else { "" };
-            ui.label(
-                RichText::new(format!("{} -> {}{}", src_label, tgt_label, suffix))
+                RichText::new("Multiple files supported")
                     .font(theme::small_font())
                     .color(p.success),
             );

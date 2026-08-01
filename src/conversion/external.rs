@@ -66,6 +66,12 @@ fn augmented_path() -> std::ffi::OsString {
 fn command_with_bundled_path(bin: &Path) -> Command {
     let mut cmd = Command::new(bin);
     cmd.env("PATH", augmented_path());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
     cmd
 }
 

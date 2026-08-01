@@ -75,23 +75,11 @@ impl QueuePanel {
                                     ui.horizontal(|ui| {
                                         ui.vertical(|ui| {
                                             ui.set_min_width(panel_w - 120.0);
-                                            ui.horizontal(|ui| {
-                                                ui.label(
-                                                    RichText::new(job.display_name())
-                                                        .font(theme::label_font())
-                                                        .color(theme::p().text_primary),
-                                                );
-                                                ui.add_space(6.0);
-                                                ui.label(
-                                                    RichText::new(format!(
-                                                        "{} -> {}",
-                                                        job.source_format.to_uppercase(),
-                                                        job.target_format.to_uppercase()
-                                                    ))
-                                                        .font(theme::small_font())
-                                                        .color(theme::p().text_muted),
-                                                );
-                                            });
+                                            ui.label(
+                                                RichText::new(job.display_name())
+                                                    .font(theme::label_font())
+                                                    .color(theme::p().text_primary),
+                                            );
 
                                             ui.add_space(6.0);
 
@@ -199,16 +187,6 @@ impl QueuePanel {
                                             RichText::new(&record.display_name)
                                                 .font(theme::small_font())
                                                 .color(theme::p().text_secondary),
-                                        );
-                                        ui.add_space(6.0);
-                                        ui.label(
-                                            RichText::new(format!(
-                                                "{} -> {}",
-                                                record.source_format.to_uppercase(),
-                                                record.target_format.to_uppercase()
-                                            ))
-                                                .font(theme::small_font())
-                                                .color(theme::p().text_muted),
                                         );
                                     });
                                 });
